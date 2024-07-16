@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 import java.util.logging.Logger;
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
@@ -21,7 +20,6 @@ public class App {
     LOGGER.log(INFO, "Initialising S3 client...");
     final S3Client s3Client = S3Client.builder()
         .region(REGION)
-        .credentialsProvider(ProfileCredentialsProvider.create())
         .build();
 
     final S3Cleaner cleaner = new S3Cleaner(s3Client, getThresholdSeconds());
