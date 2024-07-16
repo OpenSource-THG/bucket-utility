@@ -1,6 +1,7 @@
 plugins {
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
     id 'application'
+    id 'idea'
 }
 
 repositories {
@@ -15,6 +16,12 @@ dependencies {
     implementation 'software.amazon.awssdk:s3:2.20.0'
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
 application {
     // Define the main class for the application.
     mainClass = 'com.procure.thg.cockroachdb.App'
@@ -24,3 +31,11 @@ tasks.named('test') {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
 }
+
+idea {
+    module {
+        downloadJavadoc = true
+        downloadSources = true
+    }
+}
+
