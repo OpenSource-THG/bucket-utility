@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 import java.util.logging.Logger;
+import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.endpoints.S3EndpointProvider;
 
 public class App {
 
@@ -19,6 +21,8 @@ public class App {
   public static void main(String[] args) {
     LOGGER.log(INFO, "Initialising S3 client...");
     final S3Client s3Client = S3Client.builder()
+        .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
+        .endpointProvider(S3EndpointProvider.defaultProvider())
         .region(REGION)
         .build();
 
