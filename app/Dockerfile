@@ -5,7 +5,7 @@ FROM openjdk:17-jdk-slim
 WORKDIR /app
 
 # Copy the application's JAR file to the working directory
-COPY build/libs/app.jar /app/app.jar
+COPY build/libs/app-all.jar /app/app.jar
 
 # Copy the entrypoint script to the working directory
 COPY entrypoint.sh /app/entrypoint.sh
