@@ -17,13 +17,13 @@ public class S3Cleaner {
   private static final String BUCKET_NAME = "BUCKET_NAME";
   private final S3Client s3Client;
   private final long thresholdSeconds;
-  private final String folderPrefix;  // New field for folder prefix
+  private final String folder;
 
-  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds, final String folderPrefix) {
+  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds, final String folder) {
     this.s3Client = s3Client;
     this.thresholdSeconds = thresholdSeconds;
-    this.folderPrefix = folderPrefix != null && !folderPrefix.isEmpty() ?
-            folderPrefix.endsWith("/") ? folderPrefix : folderPrefix + "/"
+    this.folder = folder != null && !folder.isEmpty() ?
+            folder.endsWith("/") ? folder : folder + "/"
             : null;
   }
 
@@ -32,16 +32,18 @@ public class S3Cleaner {
     final var bucket = System.getenv(BUCKET_NAME);
     LOGGER.log(INFO, "Cleaning bucket: {0}", bucket);
     LOGGER.log(INFO, "Cleaning objects older than {0} seconds", thresholdSeconds);
-    if (folderPrefix != null) {
-      LOGGER.log(INFO, "Cleaning only within folder: {0}", folderPrefix);
+    if (folder != null) {
+      LOGGER.log(INFO, "Cleaning only within folder: {0}", folder);
     }
 
     final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
-    ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
-        .bucket(bucket)
-        .prefix(folderPrefix)
-        .build();
+    ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+            .bucket(bucket);
+    if (folder != null) {
+      requestBuilder.prefix(folder);
+    }
+    ListObjectsV2Request listObjectsV2Request = requestBuilder.build();
 
     ListObjectsV2Response listObjectsV2Response;
     do {
@@ -50,7 +52,7 @@ public class S3Cleaner {
       for (S3Object s3Object : listObjectsV2Response.contents()) {
         final String key = s3Object.key();
 
-        if (key.endsWith("/") || (folderPrefix != null && key.equals(folderPrefix))) {
+        if (key.endsWith("/") || (folder != null && key.equals(folder))) {
           continue;
         }
 
@@ -60,11 +62,14 @@ public class S3Cleaner {
         }
       }
 
-      listObjectsV2Request = ListObjectsV2Request.builder()
-          .bucket(bucket)
-          .prefix(folderPrefix)
-          .continuationToken(listObjectsV2Response.nextContinuationToken())
-          .build();
+      requestBuilder = ListObjectsV2Request.builder()
+              .bucket(bucket)
+              .continuationToken(listObjectsV2Response.nextContinuationToken());
+      if (folder != null) {
+        requestBuilder.prefix(folder);
+      }
+      listObjectsV2Request = requestBuilder.build();
+
     } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
     LOGGER.log(INFO, "Cleaning finished.");
   }

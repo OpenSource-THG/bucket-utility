@@ -61,12 +61,6 @@ public class App {
   }
 
   private static String getFolderPrefix() {
-    final var folderPrefix = System.getenv(FOLDER);
-    if (folderPrefix == null || folderPrefix.isEmpty()) {
-      var msg = FOLDER + " environment variable not set";
-      LOGGER.log(SEVERE, msg);
-      throw new IllegalArgumentException(msg);
-    }
-    return folderPrefix;
+      return System.getenv(FOLDER);
   }
 }
