@@ -40,15 +40,15 @@ class AppTest {
 
   private static Stream<Arguments> arguments() {
     return Stream.of(
-        Arguments.of(1, 12*3600),
-        Arguments.of(0, 20*3600),
-        Arguments.of(2, 2*3600)
+        Arguments.of(1, 12*3600, "/images"),
+        Arguments.of(0, 20*3600, "/images/"),
+        Arguments.of(2, 2*3600, null)
     );
   }
 
   @ParameterizedTest
   @MethodSource("arguments")
-  void testDeleteOldObjects(final int numOfInvocations, final int thresholdSeconds) {
+  void testDeleteOldObjects(final int numOfInvocations, final int thresholdSeconds, final String folder) {
     final var s3Objects = new ArrayList<S3Object>();
     final var now = Instant.now();
     s3Objects.add(S3Object.builder().key("old-object").lastModified(now.minusSeconds(13 * 3600)).build());
@@ -61,7 +61,7 @@ class AppTest {
 
     when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(listObjectsV2Response);
 
-    final S3Cleaner app = new S3Cleaner(s3Client, thresholdSeconds);
+    final S3Cleaner app = new S3Cleaner(s3Client, thresholdSeconds, folder);
     app.cleanOldObjects();
 
     verify(s3Client, times(numOfInvocations)).deleteObject(any(DeleteObjectRequest.class));

@@ -15,6 +15,7 @@ public class App {
   private static final Logger LOGGER = Logger.getLogger(App.class.getName());
 
   private static final String THRESHOLD_SECONDS = "THRESHOLD_SECONDS";
+  private static final String FOLDER = "FOLDER";
   private static final Region REGION = Region.EU_WEST_1; // Change to your bucket's region
   private static final String AWS_ENDPOINT_URL = "AWS_ENDPOINT_URL";
 
@@ -27,7 +28,7 @@ public class App {
         .forcePathStyle(true)
         .build();
 
-    final S3Cleaner cleaner = new S3Cleaner(s3Client, getThresholdSeconds());
+    final S3Cleaner cleaner = new S3Cleaner(s3Client, getThresholdSeconds(), getFolderPrefix());
     cleaner.cleanOldObjects();
 
     s3Client.close();
@@ -57,5 +58,9 @@ public class App {
       throw new IllegalArgumentException(msg);
     }
     return Long.parseLong(thresholdEnv);
+  }
+
+  private static String getFolderPrefix() {
+      return System.getenv(FOLDER);
   }
 }

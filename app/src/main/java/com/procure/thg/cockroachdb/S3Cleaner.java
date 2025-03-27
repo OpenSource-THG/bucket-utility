@@ -17,38 +17,59 @@ public class S3Cleaner {
   private static final String BUCKET_NAME = "BUCKET_NAME";
   private final S3Client s3Client;
   private final long thresholdSeconds;
+  private final String folder;
 
-  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds) {
+  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds, final String folder) {
     this.s3Client = s3Client;
     this.thresholdSeconds = thresholdSeconds;
+    this.folder = folder != null && !folder.isEmpty() ?
+            folder.endsWith("/") ? folder : folder + "/"
+            : null;
   }
 
   public void cleanOldObjects() {
-    LOGGER.log(INFO,"Starting cleaner...");
+    LOGGER.log(INFO, "Starting cleaner...");
     final var bucket = System.getenv(BUCKET_NAME);
     LOGGER.log(INFO, "Cleaning bucket: {0}", bucket);
     LOGGER.log(INFO, "Cleaning objects older than {0} seconds", thresholdSeconds);
+    if (folder != null) {
+      LOGGER.log(INFO, "Cleaning only within folder: {0}", folder);
+    }
 
     final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
-    ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
-        .bucket(bucket)
-        .build();
+    ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+            .bucket(bucket);
+    if (folder != null) {
+      requestBuilder.prefix(folder);
+    }
+    ListObjectsV2Request listObjectsV2Request = requestBuilder.build();
 
     ListObjectsV2Response listObjectsV2Response;
     do {
       listObjectsV2Response = s3Client.listObjectsV2(listObjectsV2Request);
 
       for (S3Object s3Object : listObjectsV2Response.contents()) {
+        final String key = s3Object.key();
+
+        if (key.endsWith("/") || (folder != null && key.equals(folder))) {
+          continue;
+        }
+
+
         if (s3Object.lastModified().isBefore(threshold)) {
-          deleteObject(s3Client, bucket, s3Object.key());
+          deleteObject(s3Client, bucket, key);
         }
       }
 
-      listObjectsV2Request = ListObjectsV2Request.builder()
-          .bucket(bucket)
-          .continuationToken(listObjectsV2Response.nextContinuationToken())
-          .build();
+      requestBuilder = ListObjectsV2Request.builder()
+              .bucket(bucket)
+              .continuationToken(listObjectsV2Response.nextContinuationToken());
+      if (folder != null) {
+        requestBuilder.prefix(folder);
+      }
+      listObjectsV2Request = requestBuilder.build();
+
     } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
     LOGGER.log(INFO, "Cleaning finished.");
   }
