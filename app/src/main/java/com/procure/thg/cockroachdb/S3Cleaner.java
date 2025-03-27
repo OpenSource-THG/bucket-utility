@@ -17,22 +17,30 @@ public class S3Cleaner {
   private static final String BUCKET_NAME = "BUCKET_NAME";
   private final S3Client s3Client;
   private final long thresholdSeconds;
+  private final String folderPrefix;  // New field for folder prefix
 
-  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds) {
+  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds, final String folderPrefix) {
     this.s3Client = s3Client;
     this.thresholdSeconds = thresholdSeconds;
+    this.folderPrefix = folderPrefix != null && !folderPrefix.isEmpty() ?
+            folderPrefix.endsWith("/") ? folderPrefix : folderPrefix + "/"
+            : null;
   }
 
   public void cleanOldObjects() {
-    LOGGER.log(INFO,"Starting cleaner...");
+    LOGGER.log(INFO, "Starting cleaner...");
     final var bucket = System.getenv(BUCKET_NAME);
     LOGGER.log(INFO, "Cleaning bucket: {0}", bucket);
     LOGGER.log(INFO, "Cleaning objects older than {0} seconds", thresholdSeconds);
+    if (folderPrefix != null) {
+      LOGGER.log(INFO, "Cleaning only within folder: {0}", folderPrefix);
+    }
 
     final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
     ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
         .bucket(bucket)
+        .prefix(folderPrefix)
         .build();
 
     ListObjectsV2Response listObjectsV2Response;
@@ -40,13 +48,21 @@ public class S3Cleaner {
       listObjectsV2Response = s3Client.listObjectsV2(listObjectsV2Request);
 
       for (S3Object s3Object : listObjectsV2Response.contents()) {
+        final String key = s3Object.key();
+
+        if (key.endsWith("/") || (folderPrefix != null && key.equals(folderPrefix))) {
+          continue;
+        }
+
+
         if (s3Object.lastModified().isBefore(threshold)) {
-          deleteObject(s3Client, bucket, s3Object.key());
+          deleteObject(s3Client, bucket, key);
         }
       }
 
       listObjectsV2Request = ListObjectsV2Request.builder()
           .bucket(bucket)
+          .prefix(folderPrefix)
           .continuationToken(listObjectsV2Response.nextContinuationToken())
           .build();
     } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
