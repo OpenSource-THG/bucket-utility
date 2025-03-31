@@ -41,7 +41,7 @@ public class S3Copier {
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
-        LOGGER.log(INFO, "Starting to copy old objects from {0}/{1} to {2}/{3}",
+        LOGGER.log(INFO, "Starting to copy objects from {0}/{1} to {2}/{3}",
                 new Object[]{sourceBucket, sourceFolder, targetBucket, targetFolder});
         final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
