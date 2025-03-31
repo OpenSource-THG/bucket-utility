@@ -68,10 +68,11 @@ public class App {
         S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
                 targetClient, targetBucket, targetFolder);
         copier.copyRecentObjects(thresholdSeconds);
-      }
+      } else {
 
-      S3Cleaner cleaner = new S3Cleaner(sourceClient, thresholdSeconds, folder);
-      cleaner.cleanOldObjects();
+        S3Cleaner cleaner = new S3Cleaner(sourceClient, thresholdSeconds, folder);
+        cleaner.cleanOldObjects();
+      }
     } catch (Exception e) {
       LOGGER.log(SEVERE, "Application failed", e);
       throw e;
