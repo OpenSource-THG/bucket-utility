@@ -50,7 +50,7 @@ public class App {
         String targetSecretKey = System.getenv(TARGET_AWS_SECRET_ACCESS_KEY);
         String targetEndpoint = System.getenv(TARGET_AWS_ENDPOINT_URL);
         String targetBucket = System.getenv(TARGET_BUCKET_NAME);
-        String targetFolder = System.getenv(TARGET_FOLDER); // Can be null
+        String targetFolder = System.getenv(TARGET_FOLDER);
 
         if (targetAccessKey == null || targetSecretKey == null || targetEndpoint == null || targetBucket == null) {
           throw new IllegalArgumentException("Required target environment variables (TARGET_AWS_ACCESS_KEY_ID, TARGET_AWS_SECRET_ACCESS_KEY, TARGET_AWS_ENDPOINT_URL, TARGET_BUCKET_NAME) must be set when ENABLE_MOVE is true");
