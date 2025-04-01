@@ -32,12 +32,21 @@ public class S3Copier {
                     final S3Client targetClient, final String targetBucket, final String targetFolder) {
         this.sourceClient = sourceClient;
         this.sourceBucket = sourceBucket;
-        this.sourceFolder = sourceFolder != null && !sourceFolder.isEmpty() ?
-                sourceFolder.endsWith("/") ? sourceFolder : sourceFolder + "/" : "";
+        this.sourceFolder = suffixFolderName(sourceFolder);
         this.targetClient = targetClient;
         this.targetBucket = targetBucket;
-        this.targetFolder = targetFolder != null && !targetFolder.isEmpty() ?
-                targetFolder.endsWith("/") ? targetFolder : targetFolder + "/" : "";
+        this.targetFolder = suffixFolderName(targetFolder);
+    }
+
+    private String suffixFolderName(final String folder) {
+      if (folder != null && !folder.isEmpty()) {
+        if (folder.endsWith("/")) {
+          return folder;
+        }
+        return folder + "/";
+      } else {
+        return "";
+      }
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
