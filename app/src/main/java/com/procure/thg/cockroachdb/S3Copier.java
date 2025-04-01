@@ -15,8 +15,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.core.sync.RequestBody;
 
-import static java.util.logging.Level.INFO;
-import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.*;
 
 public class S3Copier {
 
@@ -90,7 +89,7 @@ public class S3Copier {
 
     private void copyObject(final String sourceKey) throws IOException {
         if (!sourceKey.startsWith(sourceFolder)) {
-            LOGGER.log(SEVERE, "Object key {0} does not start with expected prefix {1}, skipping",
+            LOGGER.log(WARNING, "Object key {0} does not start with expected prefix {1}, skipping",
                     new Object[]{sourceKey, sourceFolder});
             return;
         }
