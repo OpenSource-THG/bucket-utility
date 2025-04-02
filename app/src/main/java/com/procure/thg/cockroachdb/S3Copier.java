@@ -4,16 +4,10 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.logging.Logger;
-
 import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
 
 import static java.util.logging.Level.*;
 
@@ -59,18 +53,22 @@ public class S3Copier {
         }
         ListObjectsV2Request listObjectsV2Request = requestBuilder.build();
 
-        ListObjectsV2Response listObjectsV2Response;
-        do {
+        ListObjectsV2Response listObjectsV2Response = null;
+        try {
             listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
+        } catch (Exception e) {
+            LOGGER.log(SEVERE, String.format("Failed to list objects in %s/%s: %s", sourceBucket, sourceFolder, e.getMessage()), e);
+            return;
+        }
 
+        do {
             for (S3Object s3Object : listObjectsV2Response.contents()) {
                 final String key = s3Object.key();
-
                 if (s3Object.lastModified().isAfter(threshold)) {
                     try {
                         copyObject(key);
                     } catch (Exception e) {
-                        LOGGER.log(SEVERE, "Failed to copy object: {0}", key);
+                        LOGGER.log(SEVERE, String.format("Failed to copy object %s: %s", key, e.getMessage()), e);
                     }
                 }
             }
@@ -83,8 +81,16 @@ public class S3Copier {
             }
             listObjectsV2Request = requestBuilder.build();
 
+            if (Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
+                try {
+                    listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
+                } catch (Exception e) {
+                    LOGGER.log(SEVERE, String.format("Failed to list next page of objects in %s/%s: %s", sourceBucket, sourceFolder, e.getMessage()), e);
+                    break;
+                }
+            }
         } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
-        LOGGER.log(INFO, "Finished copying old objects.");
+        LOGGER.log(INFO, "Finished copying objects.");
     }
 
     private void copyObject(final String sourceKey) throws IOException {
@@ -118,8 +124,8 @@ public class S3Copier {
             LOGGER.log(INFO, "Copied object from {0}/{1} to {2}/{3}",
                     new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
         } catch (Exception e) {
-            LOGGER.log(SEVERE, "Failed to copy object {0} to {1}: {2}",
-                    new Object[]{sourceKey, targetKey, e.getMessage()});
+            LOGGER.log(SEVERE, String.format("Failed to copy object from %s/%s to %s/%s: %s",
+                    sourceBucket, sourceKey, targetBucket, targetKey, e.getMessage()), e);
             throw e;
         }
     }
