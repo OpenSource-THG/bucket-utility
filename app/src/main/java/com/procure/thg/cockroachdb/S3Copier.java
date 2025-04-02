@@ -38,14 +38,14 @@ public class S3Copier {
     }
 
     private String suffixFolderName(final String folder) {
-        if (folder != null && !folder.isEmpty()) {
-            if (folder.endsWith("/")) {
-                return folder;
-            }
-            return folder + "/";
-        } else {
-            return "";
+      if (folder != null && !folder.isEmpty()) {
+        if (folder.endsWith("/")) {
+          return folder;
         }
+        return folder + "/";
+      } else {
+        return "";
+      }
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
