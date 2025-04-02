@@ -2,10 +2,12 @@ package com.procure.thg.cockroachdb;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Duration;
 import java.util.logging.Logger;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
@@ -33,11 +35,14 @@ public class App {
     try {
       LOGGER.log(INFO, "Initialising source S3 client...");
       sourceClient = S3Client.builder()
-        .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
-        .endpointOverride(getEndpointUri())
-        .region(REGION)
-        .forcePathStyle(true)
-        .build();
+              .credentialsProvider(EnvironmentVariableCredentialsProvider.create())
+              .endpointOverride(getEndpointUri())
+              .region(REGION)
+              .forcePathStyle(true)
+              .httpClientBuilder(ApacheHttpClient.builder()
+                      .socketTimeout(Duration.ofSeconds(180))
+                      .connectionTimeout(Duration.ofSeconds(180)))
+              .build();
 
       String enableMoveStr = System.getenv(ENABLE_MOVE);
       boolean enableMove = Boolean.parseBoolean(enableMoveStr);
@@ -115,4 +120,5 @@ public class App {
   private static String getFolderPrefix() {
       return System.getenv(FOLDER);
   }
+
 }
