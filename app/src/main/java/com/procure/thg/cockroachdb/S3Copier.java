@@ -32,14 +32,14 @@ public class S3Copier {
     }
 
     private String suffixFolderName(final String folder) {
-      if (folder != null && !folder.isEmpty()) {
-        if (folder.endsWith("/")) {
-          return folder;
+        if (folder != null && !folder.isEmpty()) {
+            if (folder.endsWith("/")) {
+                return folder;
+            }
+            return folder + "/";
+        } else {
+            return "";
         }
-        return folder + "/";
-      } else {
-        return "";
-      }
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
@@ -54,43 +54,61 @@ public class S3Copier {
         ListObjectsV2Request listObjectsV2Request = requestBuilder.build();
 
         ListObjectsV2Response listObjectsV2Response = null;
-        try {
-            listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
-        } catch (Exception e) {
-            LOGGER.log(SEVERE, String.format("Failed to list objects in %s/%s: %s", sourceBucket, sourceFolder, e.getMessage()), e);
-            return;
-        }
+        boolean isFirstPage = true;
 
         do {
-            for (S3Object s3Object : listObjectsV2Response.contents()) {
-                final String key = s3Object.key();
-                if (s3Object.lastModified().isAfter(threshold)) {
-                    try {
-                        copyObject(key);
-                    } catch (Exception e) {
-                        LOGGER.log(SEVERE, String.format("Failed to copy object %s: %s", key, e.getMessage()), e);
+            try {
+                listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
+                LOGGER.log(FINE, "Successfully listed page of objects from {0}/{1}",
+                        new Object[]{sourceBucket, sourceFolder});
+            } catch (Exception e) {
+                LOGGER.log(SEVERE, "Failed to list objects in {0}/{1} (continuationToken={2}): {3}"
+                );
+                if (isFirstPage) {
+                    LOGGER.log(SEVERE, "Aborting: Failed to list the first page of objects.");
+                    return; // Exit if the first page fails, as we have no data to process
+                }
+                // Skip this page and try the next one if possible
+                if (listObjectsV2Response != null && Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
+                    LOGGER.log(WARNING, "Skipping malformed page, attempting to continue with next page.");
+                } else {
+                    LOGGER.log(INFO, "No more pages to process after error. Finishing with what was copied.");
+                    break;
+                }
+            }
+
+            // Process objects if the response is valid
+            if (listObjectsV2Response != null && listObjectsV2Response.contents() != null) {
+                for (S3Object s3Object : listObjectsV2Response.contents()) {
+                    final String key = s3Object.key();
+                    if (s3Object.lastModified().isAfter(threshold)) {
+                        try {
+                            copyObject(key);
+                        } catch (Exception e) {
+                            LOGGER.log(SEVERE, "Failed to copy object {0}: {1}"
+                            );
+                            // Continue with the next object even if this one fails
+                        }
                     }
                 }
             }
 
-            requestBuilder = ListObjectsV2Request.builder()
-                    .bucket(sourceBucket)
-                    .continuationToken(listObjectsV2Response.nextContinuationToken());
-            if (!sourceFolder.isEmpty()) {
-                requestBuilder.prefix(sourceFolder);
-            }
-            listObjectsV2Request = requestBuilder.build();
-
-            if (Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
-                try {
-                    listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
-                } catch (Exception e) {
-                    LOGGER.log(SEVERE, String.format("Failed to list next page of objects in %s/%s: %s", sourceBucket, sourceFolder, e.getMessage()), e);
-                    break;
+            if (listObjectsV2Response != null && Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
+                requestBuilder = ListObjectsV2Request.builder()
+                        .bucket(sourceBucket)
+                        .continuationToken(listObjectsV2Response.nextContinuationToken());
+                if (!sourceFolder.isEmpty()) {
+                    requestBuilder.prefix(sourceFolder);
                 }
+                listObjectsV2Request = requestBuilder.build();
+            } else {
+                break; // No more pages to process
             }
-        } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
-        LOGGER.log(INFO, "Finished copying objects.");
+
+            isFirstPage = false;
+        } while (true); // Loop until explicitly broken
+
+        LOGGER.log(INFO, "Finished copying objects. Some pages may have been skipped due to errors.");
     }
 
     private void copyObject(final String sourceKey) throws IOException {
