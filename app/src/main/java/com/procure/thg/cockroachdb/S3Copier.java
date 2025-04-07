@@ -32,14 +32,14 @@ public class S3Copier {
     }
 
     private String suffixFolderName(final String folder) {
-      if (folder != null && !folder.isEmpty()) {
-        if (folder.endsWith("/")) {
-          return folder;
+        if (folder != null && !folder.isEmpty()) {
+            if (folder.endsWith("/")) {
+                return folder;
+            }
+            return folder + "/";
+        } else {
+            return "";
         }
-        return folder + "/";
-      } else {
-        return "";
-      }
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
@@ -105,6 +105,24 @@ public class S3Copier {
 
         String relativeKey = sourceKey.substring(sourceFolder.length());
         String targetKey = targetFolder + relativeKey;
+
+        HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                .bucket(targetBucket)
+                .key(targetKey)
+                .build();
+
+        try {
+            targetClient.headObject(headRequest);
+            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
+                    new Object[]{targetBucket, targetKey});
+            return;
+        } catch (NoSuchKeyException e) {
+            // Object doesn't exist, proceed with copying
+        } catch (Exception e) {
+            LOGGER.log(WARNING, "Error checking existence of {0}/{1}: {2}",
+                    new Object[]{targetBucket, targetKey, e.getMessage()});
+            // Proceed with copying if we can't determine existence
+        }
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(sourceBucket)
