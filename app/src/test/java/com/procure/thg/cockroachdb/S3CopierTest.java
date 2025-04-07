@@ -20,8 +20,11 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
@@ -68,6 +71,8 @@ class S3CopierTest {
                         GetObjectResponse.builder().contentLength(7L).build(),
                         new ByteArrayInputStream("content".getBytes())
                 ));
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("new-file.txt").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
         S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null);
         copier.copyRecentObjects(thresholdSeconds);
@@ -104,6 +109,8 @@ class S3CopierTest {
                         GetObjectResponse.builder().contentLength(7L).build(),
                         new ByteArrayInputStream("content".getBytes())
                 ));
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
         S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
         copier.copyRecentObjects(thresholdSeconds);
@@ -144,6 +151,8 @@ class S3CopierTest {
                         GetObjectResponse.builder().contentLength(7L).build(),
                         new ByteArrayInputStream("content".getBytes())
                 ));
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
         S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
         copier.copyRecentObjects(thresholdSeconds);
@@ -204,6 +213,8 @@ class S3CopierTest {
                         GetObjectResponse.builder().contentLength(7L).build(),
                         new ByteArrayInputStream("content".getBytes())
                 ));
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
         S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
         copier.copyRecentObjects(thresholdSeconds);
@@ -235,31 +246,37 @@ class S3CopierTest {
                 .isTruncated(false)
                 .build();
 
-        when(sourceClient.listObjectsV2((ListObjectsV2Request) any(ListObjectsV2Request.class))).thenReturn(response);
-        when(sourceClient.getObject((GetObjectRequest) any(GetObjectRequest.class)))
+        when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
                 .thenReturn(new ResponseInputStream<>(
                         GetObjectResponse.builder().contentLength(7L).build(),
                         new ByteArrayInputStream("content".getBytes())
                 ));
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
+        when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build())))
+                .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
         S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(3)).putObject((PutObjectRequest) any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient, times(3)).putObject(any(PutObjectRequest.class), (RequestBody) any());
         verify(targetClient).putObject(
-                (PutObjectRequest) eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build()),
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build()),
                 (RequestBody) any()
         );
         verify(targetClient).putObject(
-                (PutObjectRequest) eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build()),
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build()),
                 (RequestBody) any()
         );
         verify(targetClient).putObject(
-                (PutObjectRequest) eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build()),
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build()),
                 (RequestBody) any()
         );
         verify(targetClient, never()).putObject(
-                (PutObjectRequest) eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/file1.txt").build()),
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/file1.txt").build()),
                 (RequestBody) any()
         );
     }
