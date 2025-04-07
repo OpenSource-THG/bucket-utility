@@ -32,14 +32,14 @@ public class S3Copier {
     }
 
     private String suffixFolderName(final String folder) {
-      if (folder != null && !folder.isEmpty()) {
-        if (folder.endsWith("/")) {
-          return folder;
+        if (folder != null && !folder.isEmpty()) {
+            if (folder.endsWith("/")) {
+                return folder;
+            }
+            return folder + "/";
+        } else {
+            return "";
         }
-        return folder + "/";
-      } else {
-        return "";
-      }
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
@@ -47,13 +47,15 @@ public class S3Copier {
                 new Object[]{sourceBucket, sourceFolder, targetBucket, targetFolder});
         final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
-        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder().bucket(sourceBucket);
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                .bucket(sourceBucket)
+                .encodingType(EncodingType.URL);
         if (!sourceFolder.isEmpty()) {
             requestBuilder.prefix(sourceFolder);
         }
         ListObjectsV2Request listObjectsV2Request = requestBuilder.build();
 
-        ListObjectsV2Response listObjectsV2Response = null;
+        ListObjectsV2Response listObjectsV2Response;
         try {
             listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
         } catch (Exception e) {
@@ -73,15 +75,16 @@ public class S3Copier {
                 }
             }
 
-            requestBuilder = ListObjectsV2Request.builder()
-                    .bucket(sourceBucket)
-                    .continuationToken(listObjectsV2Response.nextContinuationToken());
-            if (!sourceFolder.isEmpty()) {
-                requestBuilder.prefix(sourceFolder);
-            }
-            listObjectsV2Request = requestBuilder.build();
-
             if (Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
+                requestBuilder = ListObjectsV2Request.builder()
+                        .bucket(sourceBucket)
+                        .encodingType(EncodingType.URL)
+                        .continuationToken(listObjectsV2Response.nextContinuationToken());
+                if (!sourceFolder.isEmpty()) {
+                    requestBuilder.prefix(sourceFolder);
+                }
+                listObjectsV2Request = requestBuilder.build();
+
                 try {
                     listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
                 } catch (Exception e) {
@@ -102,6 +105,24 @@ public class S3Copier {
 
         String relativeKey = sourceKey.substring(sourceFolder.length());
         String targetKey = targetFolder + relativeKey;
+
+        HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                .bucket(targetBucket)
+                .key(targetKey)
+                .build();
+
+        try {
+            targetClient.headObject(headRequest);
+            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
+                    new Object[]{targetBucket, targetKey});
+            return;
+        } catch (NoSuchKeyException e) {
+            // Object doesn't exist, proceed with copying
+        } catch (Exception e) {
+            LOGGER.log(WARNING, "Error checking existence of {0}/{1}: {2}",
+                    new Object[]{targetBucket, targetKey, e.getMessage()});
+            // Proceed with copying if we can't determine existence
+        }
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(sourceBucket)
