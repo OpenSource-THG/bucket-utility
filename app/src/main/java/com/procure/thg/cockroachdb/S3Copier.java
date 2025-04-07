@@ -47,7 +47,10 @@ public class S3Copier {
                 new Object[]{sourceBucket, sourceFolder, targetBucket, targetFolder});
         final Instant threshold = Instant.now().minus(thresholdSeconds, ChronoUnit.SECONDS);
 
-        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder().bucket(sourceBucket);
+        // Build initial request with URL encoding
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                .bucket(sourceBucket)
+                .encodingType(EncodingType.URL); // Prevent XML parsing errors
         if (!sourceFolder.isEmpty()) {
             requestBuilder.prefix(sourceFolder);
         }
@@ -69,24 +72,27 @@ public class S3Copier {
                         copyObject(key);
                     } catch (Exception e) {
                         LOGGER.log(SEVERE, String.format("Failed to copy object %s: %s", key, e.getMessage()), e);
+                        // Continue to next object
                     }
                 }
             }
 
-            requestBuilder = ListObjectsV2Request.builder()
-                    .bucket(sourceBucket)
-                    .continuationToken(listObjectsV2Response.nextContinuationToken());
-            if (!sourceFolder.isEmpty()) {
-                requestBuilder.prefix(sourceFolder);
-            }
-            listObjectsV2Request = requestBuilder.build();
-
             if (Boolean.TRUE.equals(listObjectsV2Response.isTruncated())) {
+                // Build request for next page, maintaining URL encoding
+                requestBuilder = ListObjectsV2Request.builder()
+                        .bucket(sourceBucket)
+                        .encodingType(EncodingType.URL) // Ensure all pages use URL encoding
+                        .continuationToken(listObjectsV2Response.nextContinuationToken());
+                if (!sourceFolder.isEmpty()) {
+                    requestBuilder.prefix(sourceFolder);
+                }
+                listObjectsV2Request = requestBuilder.build();
+
                 try {
                     listObjectsV2Response = sourceClient.listObjectsV2(listObjectsV2Request);
                 } catch (Exception e) {
                     LOGGER.log(SEVERE, String.format("Failed to list next page of objects in %s/%s: %s", sourceBucket, sourceFolder, e.getMessage()), e);
-                    break;
+                    break; // Stop pagination but keep prior copies
                 }
             }
         } while (Boolean.TRUE.equals(listObjectsV2Response.isTruncated()));
