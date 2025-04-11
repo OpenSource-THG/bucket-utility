@@ -40,8 +40,8 @@ public class App {
               .region(REGION)
               .forcePathStyle(true)
               .httpClientBuilder(ApacheHttpClient.builder()
-                      .socketTimeout(Duration.ofSeconds(600))
-                      .connectionTimeout(Duration.ofSeconds(600)))
+                      .socketTimeout(Duration.ofSeconds(6000))
+                      .connectionTimeout(Duration.ofSeconds(6000)))
               .build();
 
       String enableMoveStr = System.getenv(ENABLE_MOVE);

@@ -113,7 +113,7 @@ public class S3Copier {
 
         try {
             targetClient.headObject(headRequest);
-            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
+            LOGGER.log(INFO, "Object {0 }/{1} already exists, skipping",
                     new Object[]{targetBucket, targetKey});
             return;
         } catch (NoSuchKeyException e) {
