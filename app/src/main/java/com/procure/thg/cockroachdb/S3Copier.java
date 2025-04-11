@@ -113,7 +113,7 @@ public class S3Copier {
 
         try {
             targetClient.headObject(headRequest);
-            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
+            LOGGER.log(INFO, "Object {0 }/{1} already exists, skipping",
                     new Object[]{targetBucket, targetKey});
             return;
         } catch (NoSuchKeyException e) {
@@ -133,6 +133,7 @@ public class S3Copier {
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(targetBucket)
                     .key(targetKey)
+
                     .build();
 
             if (contentLength != null && contentLength >= 0) {
