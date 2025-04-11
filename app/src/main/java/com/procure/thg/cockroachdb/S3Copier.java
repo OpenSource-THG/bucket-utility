@@ -133,6 +133,7 @@ public class S3Copier {
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(targetBucket)
                     .key(targetKey)
+
                     .build();
 
             if (contentLength != null && contentLength >= 0) {

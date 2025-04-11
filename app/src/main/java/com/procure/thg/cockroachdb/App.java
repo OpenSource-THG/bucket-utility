@@ -68,6 +68,9 @@ public class App {
                 .endpointOverride(URI.create(targetEndpoint))
                 .forcePathStyle(true)
                 .region(REGION)
+                .httpClientBuilder(ApacheHttpClient.builder()
+                        .socketTimeout(Duration.ofSeconds(6000))
+                        .connectionTimeout(Duration.ofSeconds(6000)))
                 .build();
 
         S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
