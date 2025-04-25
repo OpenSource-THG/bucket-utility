@@ -29,6 +29,7 @@ public class App {
   private static final Region REGION = Region.EU_WEST_1; // Adjust to your region
   private static final String AWS_ENDPOINT_URL = "AWS_ENDPOINT_URL";
   private static final String COPY_EXISTING = "COPY_EXISTING";
+  private static final String COPY_METADATA = "COPY_METADATA";
 
 
   public static void main(String[] args) {
