@@ -1,12 +1,15 @@
 package com.procure.thg.cockroachdb;
 
 import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.time.format.DateTimeParseException;
 import java.util.logging.Logger;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.S3Object;
@@ -56,9 +59,41 @@ public class S3Cleaner {
           continue;
         }
 
-
-        if (s3Object.lastModified().isBefore(threshold)) {
-          deleteObject(s3Client, bucket, key);
+        // Fetch object metadata to x-amz-meta-last-modified
+        HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .build();
+        try {
+          var headResponse = s3Client.headObject(headRequest);
+          String createdDate = headResponse.metadata().get("x-amz-meta-last-modified");
+          if (createdDate != null) {
+            try {
+              Instant createdInstant = Instant.parse(createdDate);
+              if (createdInstant.isBefore(threshold)) {
+                deleteObject(s3Client, bucket, key);
+              }
+            } catch (DateTimeParseException e) {
+              LOGGER.log(WARNING, "Invalid x-amz-meta-created format for {0}: {1}",
+                      new Object[]{key, createdDate});
+              // Fallback to lastModified
+              if (s3Object.lastModified().isBefore(threshold)) {
+                deleteObject(s3Client, bucket, key);
+              }
+            }
+          } else {
+            // Fallback to lastModified if x-amz-meta-created is missing
+            if (s3Object.lastModified().isBefore(threshold)) {
+              deleteObject(s3Client, bucket, key);
+            }
+          }
+        } catch (Exception e) {
+          LOGGER.log(WARNING, "Failed to fetch metadata for {0}: {1}",
+                  new Object[]{key, e.getMessage()});
+          // Fallback to lastModified
+          if (s3Object.lastModified().isBefore(threshold)) {
+            deleteObject(s3Client, bucket, key);
+          }
         }
       }
 
