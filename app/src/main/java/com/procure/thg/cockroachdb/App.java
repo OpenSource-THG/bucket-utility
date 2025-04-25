@@ -79,7 +79,7 @@ public class App {
 
         S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
                 targetClient, targetBucket, targetFolder, copyExisting);
-        if (copyExisting) {
+        if (copyMetadata) {
           copier.syncMetaDataRecentObjects(thresholdSeconds);
         } else {
           copier.copyRecentObjects(thresholdSeconds);
