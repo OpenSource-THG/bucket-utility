@@ -72,7 +72,7 @@ public class S3Cleaner {
             continue;
           }
 
-          // Fetch object metadata to x-amz-meta-last-modified
+          // Fetch object metadata to last-modified
           HeadObjectRequest headRequest = HeadObjectRequest.builder()
                   .bucket(bucket)
                   .key(key)
@@ -80,19 +80,19 @@ public class S3Cleaner {
           try {
             var headResponse = s3Client.headObject(headRequest);
             LOGGER.log(INFO, "Metadata for {0}: {1}", new Object[]{key, headResponse.metadata()});
-            String createdDate = headResponse.metadata().get("X-Amz-Meta-Last-Modified");
+            String createdDate = headResponse.metadata().get("last-modified");
             if (createdDate != null) {
               try {
                 Instant createdInstant = Instant.parse(createdDate);
-                LOGGER.log(INFO, "x-amz-meta-last-modified for {0}: {1}", new Object[]{key, createdDate});
+                LOGGER.log(INFO, "last-modified for {0}: {1}", new Object[]{key, createdDate});
                 if (createdInstant.isBefore(threshold)) {
                   deleteObject(s3Client, bucket, key);
                 } else {
-                  LOGGER.log(INFO, "Skipping {0}: x-amz-meta-last-modified {1} is after threshold {2}",
+                  LOGGER.log(INFO, "Skipping {0}: last-modified {1} is after threshold {2}",
                           new Object[]{key, createdInstant, threshold});
                 }
               } catch (DateTimeParseException e) {
-                LOGGER.log(WARNING, "Invalid x-amz-meta-last-modified format for {0}: {1}",
+                LOGGER.log(WARNING, "Invalid last-modified format for {0}: {1}",
                         new Object[]{key, createdDate});
                 // Fallback to lastModified
                 Instant lastModified = s3Object.lastModified();
@@ -105,8 +105,8 @@ public class S3Cleaner {
                 }
               }
             } else {
-              // Fallback to lastModified if x-amz-meta-last-modified is missing
-              LOGGER.log(WARNING, "No x-amz-meta-last-modified for {0}, using LastModified", key);
+              // Fallback to lastModified if last-modified is missing
+              LOGGER.log(WARNING, "No last-modified for {0}, using LastModified", key);
               Instant lastModified = s3Object.lastModified();
               LOGGER.log(INFO, "LastModified for {0}: {1}", new Object[]{key, lastModified});
               if (lastModified.isBefore(threshold)) {

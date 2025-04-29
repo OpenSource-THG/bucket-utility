@@ -74,7 +74,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", oldDate.toString());
+        metadata.put("last-modified", oldDate.toString());
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
@@ -103,7 +103,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", "2024-04-28T05:35:08Z");
+        metadata.put("last-modified", "2024-04-28T05:35:08Z");
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
@@ -119,11 +119,10 @@ class S3CleanerTest {
 
     @Test
     void testCleanOldObjectsWithValidMetadataNewerThanThreshold() {
-        // Arrange
-        Instant newDate = THRESHOLD.plusSeconds(3600); // 1 hour newer than threshold
+        Instant newDate = THRESHOLD.plusSeconds(5600); // 2025-04-28T14:14:58Z
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(NOW)
+                .lastModified(NOW) // 2025-04-29T14:14:58Z
                 .build();
         ListObjectsV2Response response = ListObjectsV2Response.builder()
                 .contents(s3Object)
@@ -132,17 +131,15 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", newDate.toString());
+        metadata.put("last-modified", newDate.toString());
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
         when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
                 .thenReturn(headResponse);
 
-        // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
         verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
     }
 
@@ -161,7 +158,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(Collections.emptyMap()) // No X-Amz-Meta-Last-Modified
+                .metadata(Collections.emptyMap()) // No last-modified
                 .build();
         when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
                 .thenReturn(headResponse);
@@ -188,7 +185,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", "invalid-date-format"); // Invalid format
+        metadata.put("last-modified", "invalid-date-format"); // Invalid format
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
@@ -265,7 +262,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2((ListObjectsV2Request) argThat(req -> req instanceof ListObjectsV2Request && "token".equals(((ListObjectsV2Request) req).continuationToken())))).thenReturn(page2);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", oldDate.toString());
+        metadata.put("last-modified", oldDate.toString());
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
@@ -316,7 +313,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", oldDate.toString());
+        metadata.put("last-modified", oldDate.toString());
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
@@ -347,7 +344,7 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("X-Amz-Meta-Last-Modified", oldDate.toString());
+        metadata.put("last-modified", oldDate.toString());
         HeadObjectResponse headResponse = HeadObjectResponse.builder()
                 .metadata(metadata)
                 .build();
