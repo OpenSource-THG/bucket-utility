@@ -1,10 +1,13 @@
 package com.procure.thg.cockroachdb;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
@@ -19,17 +22,15 @@ public class S3Copier {
     private final S3Client targetClient;
     private final String targetBucket;
     private final String targetFolder;
-    private final Boolean copyExisting;
 
     public S3Copier(final S3Client sourceClient, final String sourceBucket, final String sourceFolder,
-                    final S3Client targetClient, final String targetBucket, final String targetFolder, final boolean copyExisting) {
+                    final S3Client targetClient, final String targetBucket, final String targetFolder) {
         this.sourceClient = sourceClient;
         this.sourceBucket = sourceBucket;
         this.sourceFolder = suffixFolderName(sourceFolder);
         this.targetClient = targetClient;
         this.targetBucket = targetBucket;
         this.targetFolder = suffixFolderName(targetFolder);
-        this.copyExisting = copyExisting;
     }
 
     private String suffixFolderName(final String folder) {
@@ -97,7 +98,7 @@ public class S3Copier {
         LOGGER.log(INFO, "Finished copying objects.");
     }
 
-    private void copyObject(final String sourceKey) {
+    private void copyObject(final String sourceKey) throws IOException {
         if (!sourceKey.startsWith(sourceFolder)) {
             LOGGER.log(WARNING, "Object key {0} does not start with expected prefix {1}, skipping",
                     new Object[]{sourceKey, sourceFolder});
@@ -111,31 +112,39 @@ public class S3Copier {
                 .bucket(targetBucket)
                 .key(targetKey)
                 .build();
-        if (Boolean.FALSE.equals(copyExisting)) {
-            try {
-                targetClient.headObject(headRequest);
-                LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
-                        new Object[]{targetBucket, targetKey});
-                return;
-            } catch (NoSuchKeyException e) {
-                // Object doesn't exist, proceed with copying
-            } catch (Exception e) {
-                LOGGER.log(WARNING, "Error checking existence of {0}/{1}: {2}",
-                        new Object[]{targetBucket, targetKey, e.getMessage()});
-                // Proceed with copying if we can't determine existence
-            }
-        }
-
-        CopyObjectRequest copyRequest = CopyObjectRequest.builder()
-                .sourceBucket(sourceBucket)
-                .sourceKey(sourceKey)
-                .destinationBucket(targetBucket)
-                .destinationKey(targetKey)
-                .metadataDirective(MetadataDirective.COPY)
-                .build();
 
         try {
-            targetClient.copyObject(copyRequest);
+            targetClient.headObject(headRequest);
+            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
+                    new Object[]{targetBucket, targetKey});
+            return;
+        } catch (NoSuchKeyException e) {
+            // Object doesn't exist, proceed with copying
+        } catch (Exception e) {
+            LOGGER.log(WARNING, "Error checking existence of {0}/{1}: {2}",
+                    new Object[]{targetBucket, targetKey, e.getMessage()});
+            // Proceed with copying if we can't determine existence
+        }
+
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(sourceBucket)
+                .key(sourceKey)
+                .build();
+        try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
+            Long contentLength = objectStream.response().contentLength();
+            PutObjectRequest putRequest = PutObjectRequest.builder()
+                    .bucket(targetBucket)
+                    .key(targetKey)
+
+                    .build();
+
+            if (contentLength != null && contentLength >= 0) {
+                targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
+            } else {
+                byte[] content = objectStream.readAllBytes();
+                targetClient.putObject(putRequest, RequestBody.fromBytes(content));
+            }
+
             LOGGER.log(INFO, "Copied object from {0}/{1} to {2}/{3}",
                     new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
         } catch (Exception e) {
