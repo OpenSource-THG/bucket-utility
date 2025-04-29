@@ -28,7 +28,6 @@ public class App {
   private static final String TARGET_FOLDER = "TARGET_FOLDER";
   private static final Region REGION = Region.EU_WEST_1; // Adjust to your region
   private static final String AWS_ENDPOINT_URL = "AWS_ENDPOINT_URL";
-  private static final String COPY_EXISTING = "COPY_EXISTING";
   private static final String COPY_METADATA = "COPY_METADATA";
 
 
@@ -59,8 +58,8 @@ public class App {
         String targetEndpoint = System.getenv(TARGET_AWS_ENDPOINT_URL);
         String targetBucket = System.getenv(TARGET_BUCKET_NAME);
         String targetFolder = System.getenv(TARGET_FOLDER);
-        boolean copyExisting = Boolean.parseBoolean(System.getenv(COPY_EXISTING));
         boolean copyMetadata = Boolean.parseBoolean(System.getenv(COPY_METADATA));
+
         if (targetAccessKey == null || targetSecretKey == null || targetEndpoint == null || targetBucket == null) {
           throw new IllegalArgumentException("Required target environment variables (TARGET_AWS_ACCESS_KEY_ID, TARGET_AWS_SECRET_ACCESS_KEY, TARGET_AWS_ENDPOINT_URL, TARGET_BUCKET_NAME) must be set when ENABLE_MOVE is true");
         }
@@ -78,7 +77,7 @@ public class App {
                 .build();
 
         S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
-                targetClient, targetBucket, targetFolder, copyExisting);
+                targetClient, targetBucket, targetFolder);
         if (copyMetadata) {
           copier.syncMetaDataRecentObjects(thresholdSeconds);
         } else {
