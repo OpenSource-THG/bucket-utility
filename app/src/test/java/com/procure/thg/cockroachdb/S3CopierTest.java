@@ -7,16 +7,26 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.List;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 class S3CopierTest {
 
@@ -56,32 +66,25 @@ class S3CopierTest {
                 .build();
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("new-file.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null);
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(1)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("new-file.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("new-file.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("new-file.txt").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("old-file.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("old-file.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("old-file.txt").build()),
+                (RequestBody) any()
         );
     }
 
@@ -101,41 +104,29 @@ class S3CopierTest {
                 .build();
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive", false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(1)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("images/new.jpg")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("archive/new.jpg")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("images/old.jpg")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("archive/old.jpg")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("archive/old.jpg").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("documents/doc.pdf")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("archive/documents/doc.pdf")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("archive/documents/doc.pdf").build()),
+                (RequestBody) any()
         );
     }
 
@@ -155,41 +146,29 @@ class S3CopierTest {
                 .build();
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup", false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(1)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("new-file.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/new-file.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("file1.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/file1.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/file1.txt").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("subdir/file2.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/subdir/file2.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build()),
+                (RequestBody) any()
         );
     }
 
@@ -208,10 +187,10 @@ class S3CopierTest {
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null);
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, never()).copyObject(any(CopyObjectRequest.class));
+        verify(targetClient, never()).putObject(any(PutObjectRequest.class), (RequestBody) any());
     }
 
     @Test
@@ -229,32 +208,25 @@ class S3CopierTest {
                 .build();
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive", false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(1)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("images/new.jpg")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("archive/new.jpg")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("images/")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("archive/")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("archive/").build()),
+                (RequestBody) any()
         );
     }
 
@@ -275,87 +247,37 @@ class S3CopierTest {
                 .build();
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup", false);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
         copier.copyRecentObjects(thresholdSeconds);
 
-        verify(targetClient, times(3)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("subdir/file2.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/subdir/file2.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, times(3)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/file2.txt").build()),
+                (RequestBody) any()
         );
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("new-file.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/new-file.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build()),
+                (RequestBody) any()
         );
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("subdir/")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/subdir/")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build()),
+                (RequestBody) any()
         );
-        verify(targetClient, never()).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("file1.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("backup/file1.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
+        verify(targetClient, never()).putObject(
+                eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/file1.txt").build()),
+                (RequestBody) any()
         );
-    }
-
-    @Test
-    void testCopyRecentObjectsWithCopyExisting() {
-        final var now = Instant.now();
-        final int thresholdSeconds = 10 * 3600; // 10 hours
-        List<S3Object> objects = List.of(
-                S3Object.builder().key("new-file.txt").lastModified(now.minusSeconds(5 * 3600)).build()
-        );
-
-        ListObjectsV2Response response = ListObjectsV2Response.builder()
-                .contents(objects)
-                .isTruncated(false)
-                .build();
-
-        when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
-        when(targetClient.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
-
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, true);
-        copier.copyRecentObjects(thresholdSeconds);
-
-        verify(targetClient, times(1)).copyObject(any(CopyObjectRequest.class));
-        verify(targetClient).copyObject(
-                eq(CopyObjectRequest.builder()
-                        .sourceBucket(sourceBucket)
-                        .sourceKey("new-file.txt")
-                        .destinationBucket(targetBucket)
-                        .destinationKey("new-file.txt")
-                        .metadataDirective(MetadataDirective.COPY)
-                        .build())
-        );
-        verify(targetClient, never()).headObject(any(HeadObjectRequest.class)); // Skips existence check when copyExisting is true
     }
 }
