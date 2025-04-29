@@ -80,7 +80,7 @@ public class S3Cleaner {
           try {
             var headResponse = s3Client.headObject(headRequest);
             LOGGER.log(INFO, "Metadata for {0}: {1}", new Object[]{key, headResponse.metadata()});
-            String createdDate = headResponse.metadata().get("x-amz-meta-last-modified");
+            String createdDate = headResponse.metadata().get("X-Amz-Meta-Last-Modified");
             if (createdDate != null) {
               try {
                 Instant createdInstant = Instant.parse(createdDate);
