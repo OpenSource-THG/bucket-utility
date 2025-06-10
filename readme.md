@@ -268,4 +268,4 @@ java -jar /app/app.jar
 
 ## License
 
-todo
+This project is licensed under the MIT License. See the `LICENSE` file for details.
