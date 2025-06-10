@@ -27,7 +27,7 @@ class S3CleanerTest {
     private static final String BUCKET_NAME = "thg-procurement-data";
     private static final String FOLDER = "shared/non-compliance/";
     private static final long THRESHOLD_SECONDS = 90000; // ~25 hours
-    private static final Instant NOW = Instant.parse("2025-04-29T12:00:00Z");
+    private static final Instant NOW = Instant.now();
     private static final Instant THRESHOLD = NOW.minusSeconds(THRESHOLD_SECONDS);
 
     @BeforeEach
@@ -119,10 +119,10 @@ class S3CleanerTest {
 
     @Test
     void testCleanOldObjectsWithValidMetadataNewerThanThreshold() {
-        Instant newDate = THRESHOLD.plusSeconds(5600); // 2025-04-28T14:14:58Z
+        Instant newDate = THRESHOLD.plusSeconds(5600);
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(NOW) // 2025-04-29T14:14:58Z
+                .lastModified(NOW)
                 .build();
         ListObjectsV2Response response = ListObjectsV2Response.builder()
                 .contents(s3Object)
