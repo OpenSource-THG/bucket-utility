@@ -130,7 +130,7 @@ public class S3Copier {
             final HeadObjectResponse sourceHead = sourceClient.headObject(
                     HeadObjectRequest.builder().bucket(sourceBucket).key(sourceKey).build());
 
-            final boolean sameETag = sourceHead.eTag() != null && sourceHead.eTag().equals(targetHead.eTag());
+            final boolean sameETag = sourceHead.eTag() != null && targetHead.eTag() != null && sourceHead.eTag().equals(targetHead.eTag());
             final boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
 
             if (sameETag || sameSize) {
