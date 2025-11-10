@@ -21,7 +21,6 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -74,7 +73,7 @@ class S3CopierTest {
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("new-file.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
@@ -112,7 +111,7 @@ class S3CopierTest {
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive", true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
@@ -154,7 +153,7 @@ class S3CopierTest {
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/new-file.txt").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup", true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
@@ -187,7 +186,7 @@ class S3CopierTest {
 
         when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null);
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, never()).putObject(any(PutObjectRequest.class), (RequestBody) any());
@@ -216,7 +215,7 @@ class S3CopierTest {
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("archive/new.jpg").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive");
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, "images", targetClient, targetBucket, "archive", true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
@@ -259,7 +258,7 @@ class S3CopierTest {
         when(targetClient.headObject(eq(HeadObjectRequest.builder().bucket(targetBucket).key("backup/subdir/").build())))
                 .thenThrow(NoSuchKeyException.builder().message("Object not found").build());
 
-        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup");
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, "backup", true);
         copier.copyRecentObjects(thresholdSeconds);
 
         verify(targetClient, times(3)).putObject(any(PutObjectRequest.class), (RequestBody) any());
