@@ -6,6 +6,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
+
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -22,15 +23,18 @@ public class S3Copier {
     private final S3Client targetClient;
     private final String targetBucket;
     private final String targetFolder;
+    private final boolean copyModified;
 
     public S3Copier(final S3Client sourceClient, final String sourceBucket, final String sourceFolder,
-                    final S3Client targetClient, final String targetBucket, final String targetFolder) {
+                    final S3Client targetClient, final String targetBucket, final String targetFolder,
+                    final boolean copyModified) {
         this.sourceClient = sourceClient;
         this.sourceBucket = sourceBucket;
         this.sourceFolder = suffixFolderName(sourceFolder);
         this.targetClient = targetClient;
         this.targetBucket = targetBucket;
         this.targetFolder = suffixFolderName(targetFolder);
+        this.copyModified = copyModified;
     }
 
     private String suffixFolderName(final String folder) {
@@ -105,37 +109,54 @@ public class S3Copier {
             return;
         }
 
-        String relativeKey = sourceKey.substring(sourceFolder.length());
-        String targetKey = targetFolder + relativeKey;
+        final String relativeKey = sourceKey.substring(sourceFolder.length());
+        final String targetKey = targetFolder + relativeKey;
 
         HeadObjectRequest headRequest = HeadObjectRequest.builder()
                 .bucket(targetBucket)
                 .key(targetKey)
                 .build();
 
+        boolean shouldCopy = true;
         try {
-            targetClient.headObject(headRequest);
-            LOGGER.log(INFO, "Object {0}/{1} already exists, skipping",
-                    new Object[]{targetBucket, targetKey});
-            return;
+            final HeadObjectResponse targetHead = targetClient.headObject(headRequest);
+            if (!copyModified) {
+                LOGGER.log(INFO, "Object {0}/{1} already exists, skipping (copyModified=false)",
+                        new Object[]{targetBucket, targetKey});
+                return;
+            }
+
+            // compare ETag or size as a heuristic for modified detection
+            final HeadObjectResponse sourceHead = sourceClient.headObject(
+                    HeadObjectRequest.builder().bucket(sourceBucket).key(sourceKey).build());
+
+            final boolean sameETag = sourceHead.eTag() != null && targetHead.eTag() != null && sourceHead.eTag().equals(targetHead.eTag());
+            final boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
+
+            if (sameETag && sameSize) {
+                LOGGER.log(INFO, "Object {0}/{1} unchanged, skipping (copyModified=true)", new Object[]{targetBucket, targetKey});
+                shouldCopy = false;
+            }
         } catch (NoSuchKeyException e) {
-            // Object doesn't exist, proceed with copying
+            shouldCopy = true; // doesn't exist, copy it
         } catch (Exception e) {
             LOGGER.log(WARNING, "Error checking existence of {0}/{1}: {2}",
                     new Object[]{targetBucket, targetKey, e.getMessage()});
-            // Proceed with copying if we can't determine existence
+            shouldCopy = true; // on any error, attempt copy
         }
+
+        if (!shouldCopy) return;
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(sourceBucket)
                 .key(sourceKey)
                 .build();
+
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
             Long contentLength = objectStream.response().contentLength();
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(targetBucket)
                     .key(targetKey)
-
                     .build();
 
             if (contentLength != null && contentLength >= 0) {
