@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -278,5 +279,117 @@ class S3CopierTest {
                 eq(PutObjectRequest.builder().bucket(targetBucket).key("backup/file1.txt").build()),
                 (RequestBody) any()
         );
+    }
+
+    @Test
+    void testCopyRecentObjectsWithModifiedFileWhenCopyModifiedTrue() {
+        final var now = Instant.now();
+        final int thresholdSeconds = 10 * 3600;
+        List<S3Object> objects = List.of(
+                S3Object.builder().key("file.txt").lastModified(now.minusSeconds(5 * 3600)).build()
+        );
+
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+                .contents(objects)
+                .isTruncated(false)
+                .build();
+
+        when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+        when(sourceClient.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().contentLength(7L).build(),
+                        new ByteArrayInputStream("content".getBytes())
+                ));
+
+        // Source file has been modified (different ETag, size, and lastModified)
+        final HeadObjectResponse sourceHead = HeadObjectResponse.builder()
+                .eTag("\"new-etag\"")
+                .contentLength(10L)
+                .lastModified(now.minusSeconds(2 * 3600))
+                .build();
+
+        final HeadObjectResponse targetHead = HeadObjectResponse.builder()
+                .eTag("\"old-etag\"")
+                .contentLength(7L)
+                .lastModified(now.minusSeconds(5 * 3600))
+                .build();
+
+        when(sourceClient.headObject(any(HeadObjectRequest.class))).thenReturn(sourceHead);
+        when(targetClient.headObject(any(HeadObjectRequest.class))).thenReturn(targetHead);
+
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, true);
+        copier.copyRecentObjects(thresholdSeconds);
+
+        // Should re-copy because file has been modified
+        verify(targetClient, times(1)).putObject(any(PutObjectRequest.class), (RequestBody) any());
+    }
+
+    @Test
+    void testCopyRecentObjectsSkipsUnmodifiedFileWhenCopyModifiedTrue() {
+        final var now = Instant.now();
+        final int thresholdSeconds = 10 * 3600;
+        List<S3Object> objects = List.of(
+                S3Object.builder().key("file.txt").lastModified(now.minusSeconds(5 * 3600)).build()
+        );
+
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+                .contents(objects)
+                .isTruncated(false)
+                .build();
+
+        when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+
+        // Source and target files are identical (same ETag, size, and lastModified)
+        final Instant fileModTime = now.minusSeconds(5 * 3600);
+        final HeadObjectResponse sourceHead = HeadObjectResponse.builder()
+                .eTag("\"same-etag\"")
+                .contentLength(7L)
+                .lastModified(fileModTime)
+                .build();
+
+        final HeadObjectResponse targetHead = HeadObjectResponse.builder()
+                .eTag("\"same-etag\"")
+                .contentLength(7L)
+                .lastModified(fileModTime)
+                .build();
+
+        when(sourceClient.headObject(any(HeadObjectRequest.class))).thenReturn(sourceHead);
+        when(targetClient.headObject(any(HeadObjectRequest.class))).thenReturn(targetHead);
+
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, true);
+        copier.copyRecentObjects(thresholdSeconds);
+
+        // Should NOT copy because files are identical
+        verify(targetClient, never()).putObject(any(PutObjectRequest.class), (RequestBody) any());
+    }
+
+    @Test
+    void testCopyRecentObjectsSkipsExistingFileWhenCopyModifiedFalse() {
+        final var now = Instant.now();
+        final int thresholdSeconds = 10 * 3600;
+        List<S3Object> objects = List.of(
+                S3Object.builder().key("file.txt").lastModified(now.minusSeconds(5 * 3600)).build()
+        );
+
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+                .contents(objects)
+                .isTruncated(false)
+                .build();
+
+        when(sourceClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+
+        // Target file exists
+        final HeadObjectResponse targetHead = HeadObjectResponse.builder()
+                .eTag("\"existing-etag\"")
+                .contentLength(7L)
+                .build();
+
+        when(targetClient.headObject(any(HeadObjectRequest.class))).thenReturn(targetHead);
+
+        S3Copier copier = new S3Copier(sourceClient, sourceBucket, null, targetClient, targetBucket, null, false);
+        copier.copyRecentObjects(thresholdSeconds);
+
+        // Should NOT copy because copyModified=false and file exists
+        verify(targetClient, never()).putObject(any(PutObjectRequest.class), (RequestBody) any());
     }
 }
