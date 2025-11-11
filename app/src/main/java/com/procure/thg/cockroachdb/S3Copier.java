@@ -133,7 +133,7 @@ public class S3Copier {
             final boolean sameETag = sourceHead.eTag() != null && targetHead.eTag() != null && sourceHead.eTag().equals(targetHead.eTag());
             final boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
             final boolean sameModified = sourceHead.lastModified() != null && targetHead.lastModified() != null &&
-                                        sourceHead.lastModified().equals(targetHead.lastModified());
+                    sourceHead.lastModified().equals(targetHead.lastModified());
 
             if (sameETag && sameSize && sameModified) {
                 LOGGER.log(INFO, "Object {0}/{1} unchanged, skipping (copyModified=true)", new Object[]{targetBucket, targetKey});
