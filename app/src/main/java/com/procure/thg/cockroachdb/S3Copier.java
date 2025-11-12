@@ -155,37 +155,24 @@ public class S3Copier {
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
             Long contentLength = objectStream.response().contentLength();
 
-            HeadObjectResponse sourceHead = null;
-            try {
-                sourceHead = sourceClient.headObject(
-                        HeadObjectRequest.builder().bucket(sourceBucket).key(sourceKey).build());
-            } catch (Exception e) {
-                LOGGER.log(WARNING, "Failed to fetch source metadata for " + sourceKey + ", copying without metadata", e);
+            // Use metadata from GetObjectResponse
+            Map<String, String> metadata = new HashMap<>(objectStream.response().metadata());
+            if (objectStream.response().lastModified() != null) {
+                metadata.put("x-amz-meta-last-modified", objectStream.response().lastModified().toString());
             }
 
-            Map<String, String> metadata = new HashMap<>();
-            if (sourceHead != null) {
-                metadata.putAll(sourceHead.metadata());
-                if (sourceHead.lastModified() != null) {
-                    metadata.put("x-amz-meta-last-modified", sourceHead.lastModified().toString());
-                }
-            }
-
-            PutObjectRequest putRequest = PutObjectRequest.builder()
+            // Single builder chain with conditional calls
+            PutObjectRequest.Builder builder = PutObjectRequest.builder()
                     .bucket(targetBucket)
-                    .key(targetKey)
-                    .build();
-
-            if (!metadata.isEmpty() || objectStream.response().contentType() != null) {
-                PutObjectRequest.Builder builder = putRequest.toBuilder();
-                if (!metadata.isEmpty()) {
-                    builder.metadata(metadata);
-                }
-                if (objectStream.response().contentType() != null) {
-                    builder.contentType(objectStream.response().contentType());
-                }
-                putRequest = builder.build();
+                    .key(targetKey);
+            if (!metadata.isEmpty()) {
+                builder.metadata(metadata);
             }
+            String contentType = objectStream.response().contentType();
+            if (contentType != null) {
+                builder.contentType(contentType);
+            }
+            PutObjectRequest putRequest = builder.build();
 
             if (contentLength != null && contentLength >= 0) {
                 targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
@@ -267,6 +254,7 @@ public class S3Copier {
         String relativeKey = sourceKey.substring(sourceFolder.length());
         String targetKey = targetFolder + relativeKey;
 
+        // Check if the target object exists in Ceph
         HeadObjectRequest headRequest = HeadObjectRequest.builder()
                 .bucket(targetBucket)
                 .key(targetKey)
@@ -283,6 +271,7 @@ public class S3Copier {
             return;
         }
 
+        // Fetch source object metadata from S3
         HeadObjectRequest sourceHeadRequest = HeadObjectRequest.builder()
                 .bucket(sourceBucket)
                 .key(sourceKey)
@@ -296,11 +285,13 @@ public class S3Copier {
             return;
         }
 
+        // Prepare metadata (excluding lastModified)
         Map<String, String> metadata = new HashMap<>(sourceHeadResponse.metadata());
         metadata.put("x-amz-meta-last-modified", sourceHeadResponse.lastModified().toString());
 
+        // Use CopyObject to update metadata in-place on Ceph
         CopyObjectRequest copyRequest = CopyObjectRequest.builder()
-                .sourceBucket(targetBucket)
+                .sourceBucket(targetBucket) // Copy from Ceph to itself
                 .sourceKey(targetKey)
                 .destinationBucket(targetBucket)
                 .destinationKey(targetKey)
