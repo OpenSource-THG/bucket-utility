@@ -154,10 +154,25 @@ public class S3Copier {
 
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
             Long contentLength = objectStream.response().contentLength();
-            PutObjectRequest putRequest = PutObjectRequest.builder()
+
+            // Use metadata from GetObjectResponse
+            Map<String, String> metadata = new HashMap<>(objectStream.response().metadata());
+            if (objectStream.response().lastModified() != null) {
+                metadata.put("x-amz-meta-last-modified", objectStream.response().lastModified().toString());
+            }
+
+            // Single builder chain with conditional calls
+            PutObjectRequest.Builder builder = PutObjectRequest.builder()
                     .bucket(targetBucket)
-                    .key(targetKey)
-                    .build();
+                    .key(targetKey);
+            if (!metadata.isEmpty()) {
+                builder.metadata(metadata);
+            }
+            String contentType = objectStream.response().contentType();
+            if (contentType != null) {
+                builder.contentType(contentType);
+            }
+            PutObjectRequest putRequest = builder.build();
 
             if (contentLength != null && contentLength >= 0) {
                 targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
@@ -166,7 +181,7 @@ public class S3Copier {
                 targetClient.putObject(putRequest, RequestBody.fromBytes(content));
             }
 
-            LOGGER.log(INFO, "Copied object from {0}/{1} to {2}/{3}",
+            LOGGER.log(INFO, "Copied object (with metadata) from {0}/{1} to {2}/{3}",
                     new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
         } catch (Exception e) {
             LOGGER.log(SEVERE, String.format("Failed to copy object from %s/%s to %s/%s: %s",
