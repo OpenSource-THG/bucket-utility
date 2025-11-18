@@ -59,7 +59,7 @@ public class S3Cleaner {
       try {
         listObjectsV2Response = s3Client.listObjectsV2(listObjectsV2Request);
         int objectCount = listObjectsV2Response.contents().size();
-        LOGGER.log(INFO, "Page {0}: Listed {1} objects", new Object[]{pageCount, objectCount});
+        LOGGER.log(FINE, "Page {0}: Listed {1} objects", new Object[]{pageCount, objectCount});
         if (objectCount == 0) {
           LOGGER.log(INFO, "No objects found in page {0}", pageCount);
         }
@@ -133,7 +133,7 @@ public class S3Cleaner {
         }
 
         if (listObjectsV2Response.isTruncated()) {
-          LOGGER.log(INFO, "Page {0} truncated, using continuation token: {1}",
+          LOGGER.log(FINE, "Page {0} truncated, using continuation token: {1}",
                   new Object[]{pageCount, listObjectsV2Response.nextContinuationToken()});
         }
       } catch (Exception e) {
