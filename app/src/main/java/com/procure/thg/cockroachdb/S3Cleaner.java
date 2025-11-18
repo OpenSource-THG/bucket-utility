@@ -1,5 +1,6 @@
 package com.procure.thg.cockroachdb;
 
+import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 
@@ -65,10 +66,10 @@ public class S3Cleaner {
 
         for (S3Object s3Object : listObjectsV2Response.contents()) {
           final String key = s3Object.key();
-          LOGGER.log(INFO, "Processing key: {0}", key);
+          LOGGER.log(FINE, "Processing key: {0}", key);
 
           if (key.endsWith("/") || (folder != null && key.equals(folder))) {
-            LOGGER.log(INFO, "Skipping key {0}: directory or folder prefix", key);
+            LOGGER.log(FINE, "Skipping key {0}: directory or folder prefix", key);
             continue;
           }
 
@@ -79,16 +80,16 @@ public class S3Cleaner {
                   .build();
           try {
             var headResponse = s3Client.headObject(headRequest);
-            LOGGER.log(INFO, "Metadata for {0}: {1}", new Object[]{key, headResponse.metadata()});
+            LOGGER.log(FINE, "Metadata for {0}: {1}", new Object[]{key, headResponse.metadata()});
             String createdDate = headResponse.metadata().get("last-modified");
             if (createdDate != null) {
               try {
                 Instant createdInstant = Instant.parse(createdDate);
-                LOGGER.log(INFO, "last-modified for {0}: {1}", new Object[]{key, createdDate});
+                LOGGER.log(FINE, "last-modified for {0}: {1}", new Object[]{key, createdDate});
                 if (createdInstant.isBefore(threshold)) {
                   deleteObject(s3Client, bucket, key);
                 } else {
-                  LOGGER.log(INFO, "Skipping {0}: last-modified {1} is after threshold {2}",
+                  LOGGER.log(FINE, "Skipping {0}: last-modified {1} is after threshold {2}",
                           new Object[]{key, createdInstant, threshold});
                 }
               } catch (DateTimeParseException e) {
@@ -96,23 +97,23 @@ public class S3Cleaner {
                         new Object[]{key, createdDate});
                 // Fallback to lastModified
                 Instant lastModified = s3Object.lastModified();
-                LOGGER.log(INFO, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
+                LOGGER.log(FINE, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
                 if (lastModified.isBefore(threshold)) {
                   deleteObject(s3Client, bucket, key);
                 } else {
-                  LOGGER.log(INFO, "Skipping {0}: LastModified {1} is after threshold {2}",
+                  LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                           new Object[]{key, lastModified, threshold});
                 }
               }
             } else {
               // Fallback to lastModified if last-modified is missing
-              LOGGER.log(WARNING, "No last-modified for {0}, using LastModified", key);
+              LOGGER.log(FINE, "No last-modified for {0}, using LastModified", key);
               Instant lastModified = s3Object.lastModified();
-              LOGGER.log(INFO, "LastModified for {0}: {1}", new Object[]{key, lastModified});
+              LOGGER.log(FINE, "LastModified for {0}: {1}", new Object[]{key, lastModified});
               if (lastModified.isBefore(threshold)) {
                 deleteObject(s3Client, bucket, key);
               } else {
-                LOGGER.log(INFO, "Skipping {0}: LastModified {1} is after threshold {2}",
+                LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                         new Object[]{key, lastModified, threshold});
               }
             }
@@ -121,11 +122,11 @@ public class S3Cleaner {
                     new Object[]{key, e.getMessage()});
             // Fallback to lastModified
             Instant lastModified = s3Object.lastModified();
-            LOGGER.log(INFO, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
+            LOGGER.log(FINE, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
             if (lastModified.isBefore(threshold)) {
               deleteObject(s3Client, bucket, key);
             } else {
-              LOGGER.log(INFO, "Skipping {0}: LastModified {1} is after threshold {2}",
+              LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                       new Object[]{key, lastModified, threshold});
             }
           }
@@ -160,7 +161,7 @@ public class S3Cleaner {
               .key(key)
               .build();
       s3Client.deleteObject(deleteObjectRequest);
-      LOGGER.log(INFO, "Deleted object: {0}", key);
+      LOGGER.log(FINE, "Deleted object: {0}", key);
     } catch (Exception e) {
       LOGGER.log(WARNING, "Failed to delete object {0}: {1}", new Object[]{key, e.getMessage()});
     }
