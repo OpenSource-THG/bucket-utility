@@ -5,3 +5,8 @@
 build
 .idea
 .env
+
+# Ignore Claude Code settings and documentation
+.claude/
+.beads/
+CLAUDE.md
