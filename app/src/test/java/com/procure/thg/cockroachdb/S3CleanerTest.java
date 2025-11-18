@@ -10,7 +10,6 @@ import software.amazon.awssdk.services.s3.model.*;
 
 import java.time.Instant;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.mockito.Mockito.*;
@@ -65,7 +64,7 @@ class S3CleanerTest {
         Instant oldDate = THRESHOLD.minusSeconds(3600); // 1 hour older than threshold
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(oldDate) // Ensure LastModified is also old
+                .lastModified(oldDate) // Use lastModified directly
                 .build();
         ListObjectsV2Response response = ListObjectsV2Response.builder()
                 .contents(s3Object)
@@ -73,28 +72,20 @@ class S3CleanerTest {
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", oldDate.toString());
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
-
         // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
+        // Assert - no more HeadObject calls, deletion is based on lastModified
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build()));
     }
 
     @Test
-    void testCleanOldObjectsWithMetadataOlderThanThresholdButLastModifiedNewer() {
+    void testCleanOldObjectsWithLastModifiedNewer() {
         // Arrange
-        Instant oldMetadataDate = THRESHOLD.minusSeconds(3600); // 1 hour older than threshold
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(NOW) // Newer than threshold
+                .lastModified(NOW) // Newer than threshold - should not be deleted
                 .build();
         ListObjectsV2Response response = ListObjectsV2Response.builder()
                 .contents(s3Object)
@@ -102,19 +93,12 @@ class S3CleanerTest {
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", "2024-04-28T05:35:08Z");
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
-
         // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
-        verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build()));
+        // Assert - no deletion because lastModified is newer than threshold
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
     }
 
     @Test
@@ -122,7 +106,7 @@ class S3CleanerTest {
         Instant newDate = THRESHOLD.plusSeconds(5600);
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(NOW)
+                .lastModified(newDate) // Newer than threshold
                 .build();
         ListObjectsV2Response response = ListObjectsV2Response.builder()
                 .contents(s3Object)
@@ -130,22 +114,15 @@ class S3CleanerTest {
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", newDate.toString());
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
-
         s3Cleaner.cleanOldObjects();
 
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
     }
 
     @Test
-    void testCleanOldObjectsWithMissingMetadataFallbackToLastModified() {
-        // Arrange
+    void testCleanOldObjectsUsesLastModifiedDirectly() {
+        // Arrange - verify we use lastModified directly from ListObjects
         Instant oldLastModified = THRESHOLD.minusSeconds(3600); // 1 hour older
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
@@ -157,51 +134,17 @@ class S3CleanerTest {
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(Collections.emptyMap()) // No last-modified
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
-
         // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
+        // Assert - no HeadObject calls, deletion uses lastModified from ListObjects
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build()));
     }
 
     @Test
-    void testCleanOldObjectsWithInvalidMetadataFormat() {
-        // Arrange
-        Instant oldLastModified = THRESHOLD.minusSeconds(3600); // 1 hour older
-        S3Object s3Object = S3Object.builder()
-                .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(oldLastModified)
-                .build();
-        ListObjectsV2Response response = ListObjectsV2Response.builder()
-                .contents(s3Object)
-                .isTruncated(false)
-                .build();
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
-
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", "invalid-date-format"); // Invalid format
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
-
-        // Act
-        s3Cleaner.cleanOldObjects();
-
-        // Assert
-        verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build()));
-    }
-
-    @Test
-    void testCleanOldObjectsSkipsDirectory() {
-        // Arrange
+    void testCleanOldObjectsSkipsDirectoryMarkers() {
+        // Arrange - test that objects ending with / are skipped
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/")
                 .lastModified(THRESHOLD.minusSeconds(3600))
@@ -215,10 +158,11 @@ class S3CleanerTest {
         // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
+        // Assert - directory marker should be skipped
         verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
     }
+
 
     @Test
     void testCleanOldObjectsEmptyBucket() {
@@ -234,6 +178,29 @@ class S3CleanerTest {
 
         // Assert
         verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test
+    void testCleanOldObjectsDryRun() {
+        // Arrange
+        Instant oldDate = THRESHOLD.minusSeconds(3600);
+        S3Object s3Object = S3Object.builder()
+                .key("shared/non-compliance/omega/test.jpg")
+                .lastModified(oldDate)
+                .build();
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+                .contents(s3Object)
+                .isTruncated(false)
+                .build();
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
+
+        S3Cleaner dryRunCleaner = new S3Cleaner(s3Client, THRESHOLD_SECONDS, FOLDER, true);
+
+        // Act
+        dryRunCleaner.cleanOldObjects();
+
+        // Assert - should not call deleteObject in dry-run mode
         verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
     }
 
@@ -261,46 +228,29 @@ class S3CleanerTest {
         when(s3Client.listObjectsV2((ListObjectsV2Request) argThat(req -> req instanceof ListObjectsV2Request && ((ListObjectsV2Request) req).continuationToken() == null))).thenReturn(page1);
         when(s3Client.listObjectsV2((ListObjectsV2Request) argThat(req -> req instanceof ListObjectsV2Request && "token".equals(((ListObjectsV2Request) req).continuationToken())))).thenReturn(page2);
 
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", oldDate.toString());
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenReturn(headResponse);
-
         // Act
         s3Cleaner.cleanOldObjects();
 
-        // Assert
+        // Assert - no HeadObject calls, both objects deleted based on lastModified
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test1.jpg").build()));
         verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test2.jpg").build()));
     }
 
     @Test
-    void testCleanOldObjectsHeadObjectFails() {
-        // Arrange
-        Instant oldLastModified = THRESHOLD.minusSeconds(3600);
-        S3Object s3Object = S3Object.builder()
-                .key("shared/non-compliance/omega/test.jpg")
-                .lastModified(oldLastModified)
-                .build();
-        ListObjectsV2Response response = ListObjectsV2Response.builder()
-                .contents(s3Object)
-                .isTruncated(false)
-                .build();
-        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenThrow(new RuntimeException("HeadObject failed"));
-
-        // Act
-        s3Cleaner.cleanOldObjects();
-
-        // Assert
-        verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build()));
+    void testCleanOldObjectsWithValidation() {
+        // Arrange - test that constructor validates thresholdSeconds
+        try {
+            new S3Cleaner(s3Client, -1, FOLDER);
+            throw new AssertionError("Should have thrown IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // Expected
+        }
     }
 
     @Test
     void testCleanOldObjectsDeleteObjectFails() {
-        // Arrange
+        // Arrange - test graceful handling of delete failures
         Instant oldDate = THRESHOLD.minusSeconds(3600);
         S3Object s3Object = S3Object.builder()
                 .key("shared/non-compliance/omega/test.jpg")
@@ -311,20 +261,12 @@ class S3CleanerTest {
                 .isTruncated(false)
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
-
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", oldDate.toString());
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("shared/non-compliance/omega/test.jpg").build())))
-                .thenReturn(headResponse);
         doThrow(new RuntimeException("Delete failed")).when(s3Client).deleteObject(any(DeleteObjectRequest.class));
 
-        // Act
+        // Act - should not throw even if delete fails
         s3Cleaner.cleanOldObjects();
 
-        // Assert
+        // Assert - deletion was attempted even though it failed
         verify(s3Client, times(1)).deleteObject(any(DeleteObjectRequest.class));
     }
 
@@ -343,18 +285,11 @@ class S3CleanerTest {
                 .build();
         when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(response);
 
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("last-modified", oldDate.toString());
-        HeadObjectResponse headResponse = HeadObjectResponse.builder()
-                .metadata(metadata)
-                .build();
-        when(s3Client.headObject(eq(HeadObjectRequest.builder().bucket(BUCKET_NAME).key("test.jpg").build())))
-                .thenReturn(headResponse);
-
         // Act
         s3Cleaner.cleanOldObjects();
 
         // Assert
+        verify(s3Client, never()).headObject(any(HeadObjectRequest.class));
         verify(s3Client, times(1)).deleteObject(eq(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key("test.jpg").build()));
     }
 }
