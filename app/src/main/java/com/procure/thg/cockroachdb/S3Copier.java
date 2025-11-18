@@ -121,7 +121,7 @@ public class S3Copier {
         try {
             final HeadObjectResponse targetHead = targetClient.headObject(headRequest);
             if (!copyModified) {
-                LOGGER.log(INFO, "Object {0}/{1} already exists, skipping (copyModified=false)",
+                LOGGER.log(FINE, "Object {0}/{1} already exists, skipping (copyModified=false)",
                         new Object[]{targetBucket, targetKey});
                 return;
             }
@@ -134,7 +134,7 @@ public class S3Copier {
             final boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
 
             if (sameETag && sameSize) {
-                LOGGER.log(INFO, "Object {0}/{1} unchanged, skipping (copyModified=true)", new Object[]{targetBucket, targetKey});
+                LOGGER.log(FINE, "Object {0}/{1} unchanged, skipping (copyModified=true)", new Object[]{targetBucket, targetKey});
                 shouldCopy = false;
             }
         } catch (NoSuchKeyException e) {
@@ -181,7 +181,7 @@ public class S3Copier {
                 targetClient.putObject(putRequest, RequestBody.fromBytes(content));
             }
 
-            LOGGER.log(INFO, "Copied object (with metadata) from {0}/{1} to {2}/{3}",
+            LOGGER.log(FINE, "Copied object (with metadata) from {0}/{1} to {2}/{3}",
                     new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
         } catch (Exception e) {
             LOGGER.log(SEVERE, String.format("Failed to copy object from %s/%s to %s/%s: %s",
@@ -262,7 +262,7 @@ public class S3Copier {
         try {
             targetClient.headObject(headRequest);
         } catch (NoSuchKeyException e) {
-            LOGGER.log(INFO, "Object {0}/{1} does not exist in target bucket, skipping",
+            LOGGER.log(FINE, "Object {0}/{1} does not exist in target bucket, skipping",
                     new Object[]{targetBucket, targetKey});
             return;
         } catch (Exception e) {
@@ -301,7 +301,7 @@ public class S3Copier {
 
         try {
             targetClient.copyObject(copyRequest);
-            LOGGER.log(INFO, "Synced metadata for object {0}/{1} using source metadata from {2}/{3}",
+            LOGGER.log(FINE, "Synced metadata for object {0}/{1} using source metadata from {2}/{3}",
                     new Object[]{targetBucket, targetKey, sourceBucket, sourceKey});
         } catch (Exception e) {
             LOGGER.log(SEVERE, String.format("Failed to sync metadata for object %s/%s: %s",
