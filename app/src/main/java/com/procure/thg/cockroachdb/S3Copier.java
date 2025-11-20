@@ -198,6 +198,8 @@ public class S3Copier {
                     targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
                 } else {
                     // Fallback if length is missing (rare in S3)
+                    LOGGER.log(WARNING, "Warning: object length is missing");
+
                     byte[] content = objectStream.readAllBytes();
                     targetClient.putObject(putRequest, RequestBody.fromBytes(content));
                 }
