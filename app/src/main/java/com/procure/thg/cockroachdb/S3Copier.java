@@ -17,6 +17,11 @@ import static java.util.logging.Level.*;
 public class S3Copier {
 
     private static final Logger LOGGER = Logger.getLogger(S3Copier.class.getName());
+
+    // Threshold: 100 MB. Objects smaller than this are buffered to fix Ceph 403 issues.
+    // Objects larger than this are streamed to prevent OOM.
+    private static final long MEMORY_BUFFER_THRESHOLD = 100 * 1024 * 1024;
+
     private final S3Client sourceClient;
     private final String sourceBucket;
     private final String sourceFolder;
@@ -153,7 +158,7 @@ public class S3Copier {
                 .build();
 
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
-            Long contentLength = objectStream.response().contentLength();
+            final Long contentLength = objectStream.response().contentLength();
 
             // Use metadata from GetObjectResponse
             Map<String, String> metadata = new HashMap<>(objectStream.response().metadata());
@@ -161,7 +166,6 @@ public class S3Copier {
                 metadata.put("x-amz-meta-last-modified", objectStream.response().lastModified().toString());
             }
 
-            // Single builder chain with conditional calls
             PutObjectRequest.Builder builder = PutObjectRequest.builder()
                     .bucket(targetBucket)
                     .key(targetKey);
@@ -174,15 +178,32 @@ public class S3Copier {
             }
             PutObjectRequest putRequest = builder.build();
 
-            if (contentLength != null && contentLength >= 0) {
-                targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
-            } else {
-                byte[] content = objectStream.readAllBytes();
-                targetClient.putObject(putRequest, RequestBody.fromBytes(content));
-            }
+            // HYBRID STRATEGY:
+            // If file is small (< 100MB), buffer it to memory. This allows AWS SDK to calculate checksums
+            // and handle retries safely, which prevents the Ceph 403/Missing Auth errors.
+            if (contentLength != null && contentLength >= 0 && contentLength < MEMORY_BUFFER_THRESHOLD) {
+                byte[] objectContent = objectStream.readAllBytes();
+                targetClient.putObject(putRequest, RequestBody.fromBytes(objectContent));
 
-            LOGGER.log(FINE, "Copied object (with metadata) from {0}/{1} to {2}/{3}",
-                    new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
+                LOGGER.log(FINE, "Copied object (buffered) from {0}/{1} to {2}/{3} [Size: {4}]",
+                        new Object[]{sourceBucket, sourceKey, targetBucket, targetKey, contentLength});
+            } else {
+                // If file is large (or length unknown), stream it to avoid OOM.
+                // Note: If a network error occurs during this large transfer, retries might fail
+                // or cause 403s on Ceph, but we cannot risk crashing the JVM.
+                LOGGER.log(INFO, "Streaming large object (>100MB) from {0}/{1} to {2}/{3} [Size: {4}]",
+                        new Object[]{sourceBucket, sourceKey, targetBucket, targetKey, contentLength});
+
+                if (contentLength != null) {
+                    targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
+                } else {
+                    // Fallback if length is missing (rare in S3)
+                    LOGGER.log(WARNING, "Warning: object length is missing");
+
+                    byte[] content = objectStream.readAllBytes();
+                    targetClient.putObject(putRequest, RequestBody.fromBytes(content));
+                }
+            }
         } catch (Exception e) {
             LOGGER.log(SEVERE, String.format("Failed to copy object from %s/%s to %s/%s: %s",
                     sourceBucket, sourceKey, targetBucket, targetKey, e.getMessage()), e);
