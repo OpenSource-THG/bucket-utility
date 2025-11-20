@@ -181,7 +181,7 @@ public class S3Copier {
             // HYBRID STRATEGY:
             // If file is small (< 100MB), buffer it to memory. This allows AWS SDK to calculate checksums
             // and handle retries safely, which prevents the Ceph 403/Missing Auth errors.
-            if (contentLength != null && contentLength < MEMORY_BUFFER_THRESHOLD) {
+            if (contentLength != null && contentLength >= 0 && contentLength < MEMORY_BUFFER_THRESHOLD) {
                 byte[] objectContent = objectStream.readAllBytes();
                 targetClient.putObject(putRequest, RequestBody.fromBytes(objectContent));
 
