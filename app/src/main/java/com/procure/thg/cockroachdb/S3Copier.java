@@ -153,7 +153,9 @@ public class S3Copier {
                 .build();
 
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
-            Long contentLength = objectStream.response().contentLength();
+            // FIX: Read fully into memory to allow safe retries and accurate Content-Length calculation.
+            // This resolves issues where dirty connections or streaming retries cause 403s on Ceph.
+            byte[] objectContent = objectStream.readAllBytes();
 
             // Use metadata from GetObjectResponse
             Map<String, String> metadata = new HashMap<>(objectStream.response().metadata());
@@ -174,12 +176,8 @@ public class S3Copier {
             }
             PutObjectRequest putRequest = builder.build();
 
-            if (contentLength != null && contentLength >= 0) {
-                targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
-            } else {
-                byte[] content = objectStream.readAllBytes();
-                targetClient.putObject(putRequest, RequestBody.fromBytes(content));
-            }
+            // Use fromBytes instead of fromInputStream
+            targetClient.putObject(putRequest, RequestBody.fromBytes(objectContent));
 
             LOGGER.log(FINE, "Copied object (with metadata) from {0}/{1} to {2}/{3}",
                     new Object[]{sourceBucket, sourceKey, targetBucket, targetKey});
