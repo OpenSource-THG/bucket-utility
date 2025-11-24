@@ -4,6 +4,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.logging.Logger;
+
+// New Imports required for the configuration
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
+import software.amazon.awssdk.services.s3.S3Configuration;
+
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -74,7 +80,8 @@ public class App {
                         .region(REGION)
                         .httpClientBuilder(ApacheHttpClient.builder()
                                 .socketTimeout(Duration.ofSeconds(6000))
-                                .connectionTimeout(Duration.ofSeconds(6000)))
+                                .connectionTimeout(Duration.ofSeconds(6000))
+                                .expectContinueEnabled(false))
                         .build();
 
                 S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
@@ -130,5 +137,4 @@ public class App {
     private static String getFolderPrefix() {
         return System.getenv(FOLDER);
     }
-
 }
