@@ -61,7 +61,7 @@ class AppTest {
 
     when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(listObjectsV2Response);
 
-    final S3Cleaner app = new S3Cleaner(s3Client, thresholdSeconds, folder);
+    final S3Cleaner app = new S3Cleaner(s3Client, "test-bucket", thresholdSeconds, folder);
     app.cleanOldObjects();
 
     verify(s3Client, times(numOfInvocations)).deleteObject(any(DeleteObjectRequest.class));

@@ -33,30 +33,12 @@ class S3CleanerTest {
     @BeforeEach
     void setUp() {
         closeable = MockitoAnnotations.openMocks(this);
-        // Set environment variable for BUCKET_NAME using reflection to modify env
-        setEnv("BUCKET_NAME", BUCKET_NAME);
-        // Initialize S3Cleaner with mocks
-        s3Cleaner = new S3Cleaner(s3Client, THRESHOLD_SECONDS, FOLDER);
+        s3Cleaner = new S3Cleaner(s3Client, BUCKET_NAME, THRESHOLD_SECONDS, FOLDER);
     }
 
     @AfterEach
     void tearDown() throws Exception {
         closeable.close();
-    }
-
-    // Utility method to set environment variables for testing
-    @SuppressWarnings("unchecked")
-    private void setEnv(String key, String value) {
-        try {
-            Map<String, String> env = System.getenv();
-            Class<?> cl = env.getClass();
-            java.lang.reflect.Field field = cl.getDeclaredField("m");
-            field.setAccessible(true);
-            Map<String, String> writableEnv = (Map<String, String>) field.get(env);
-            writableEnv.put(key, value);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to set environment variable", e);
-        }
     }
 
     @Test
@@ -331,7 +313,7 @@ class S3CleanerTest {
     @Test
     void testCleanOldObjectsWithNoFolderPrefix() {
         // Arrange
-        s3Cleaner = new S3Cleaner(s3Client, THRESHOLD_SECONDS, null); // No folder
+        s3Cleaner = new S3Cleaner(s3Client, BUCKET_NAME, THRESHOLD_SECONDS, null); // No folder
         Instant oldDate = THRESHOLD.minusSeconds(3600);
         S3Object s3Object = S3Object.builder()
                 .key("test.jpg")

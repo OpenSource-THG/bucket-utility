@@ -85,7 +85,7 @@ public class App {
                     copier.copyRecentObjects(thresholdSeconds);
                 }
             } else {
-                S3Cleaner cleaner = new S3Cleaner(sourceClient, thresholdSeconds, folder);
+                S3Cleaner cleaner = new S3Cleaner(sourceClient, System.getenv("BUCKET_NAME"), thresholdSeconds, folder);
                 cleaner.cleanOldObjects();
             }
         } catch (Exception e) {
