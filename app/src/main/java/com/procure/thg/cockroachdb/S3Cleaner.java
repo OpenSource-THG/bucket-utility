@@ -18,13 +18,14 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 public class S3Cleaner {
 
   private static final Logger LOGGER = Logger.getLogger(S3Cleaner.class.getName());
-  private static final String BUCKET_NAME = "BUCKET_NAME";
   private final S3Client s3Client;
+  private final String bucketName;
   private final long thresholdSeconds;
   private final String folder;
 
-  public S3Cleaner(final S3Client s3Client, final long thresholdSeconds, final String folder) {
+  public S3Cleaner(final S3Client s3Client, final String bucketName, final long thresholdSeconds, final String folder) {
     this.s3Client = s3Client;
+    this.bucketName = bucketName;
     this.thresholdSeconds = thresholdSeconds;
     this.folder = folder != null && !folder.isEmpty() ?
             folder.endsWith("/") ? folder : folder + "/"
@@ -33,8 +34,7 @@ public class S3Cleaner {
 
   public void cleanOldObjects() {
     LOGGER.log(INFO, "Starting cleaner...");
-    final var bucket = System.getenv(BUCKET_NAME);
-    LOGGER.log(INFO, "Cleaning bucket: {0}", bucket);
+    LOGGER.log(INFO, "Cleaning bucket: {0}", bucketName);
     LOGGER.log(INFO, "Cleaning objects older than {0} seconds", thresholdSeconds);
     if (folder != null) {
       LOGGER.log(INFO, "Cleaning only within folder: {0}", folder);
@@ -46,7 +46,7 @@ public class S3Cleaner {
     LOGGER.log(INFO, "Threshold timestamp: {0}", threshold);
 
     ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
-            .bucket(bucket);
+            .bucket(bucketName);
     if (folder != null) {
       requestBuilder.prefix(folder);
     }
@@ -75,7 +75,7 @@ public class S3Cleaner {
 
           // Fetch object metadata to last-modified
           HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                  .bucket(bucket)
+                  .bucket(bucketName)
                   .key(key)
                   .build();
           try {
@@ -87,7 +87,7 @@ public class S3Cleaner {
                 Instant createdInstant = Instant.parse(createdDate);
                 LOGGER.log(FINE, "last-modified for {0}: {1}", new Object[]{key, createdDate});
                 if (createdInstant.isBefore(threshold)) {
-                  deleteObject(s3Client, bucket, key);
+                  deleteObject(s3Client, key);
                 } else {
                   LOGGER.log(FINE, "Skipping {0}: last-modified {1} is after threshold {2}",
                           new Object[]{key, createdInstant, threshold});
@@ -99,7 +99,7 @@ public class S3Cleaner {
                 Instant lastModified = s3Object.lastModified();
                 LOGGER.log(FINE, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
                 if (lastModified.isBefore(threshold)) {
-                  deleteObject(s3Client, bucket, key);
+                  deleteObject(s3Client, key);
                 } else {
                   LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                           new Object[]{key, lastModified, threshold});
@@ -111,7 +111,7 @@ public class S3Cleaner {
               Instant lastModified = s3Object.lastModified();
               LOGGER.log(FINE, "LastModified for {0}: {1}", new Object[]{key, lastModified});
               if (lastModified.isBefore(threshold)) {
-                deleteObject(s3Client, bucket, key);
+                deleteObject(s3Client, key);
               } else {
                 LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                         new Object[]{key, lastModified, threshold});
@@ -124,7 +124,7 @@ public class S3Cleaner {
             Instant lastModified = s3Object.lastModified();
             LOGGER.log(FINE, "Falling back to LastModified for {0}: {1}", new Object[]{key, lastModified});
             if (lastModified.isBefore(threshold)) {
-              deleteObject(s3Client, bucket, key);
+              deleteObject(s3Client, key);
             } else {
               LOGGER.log(FINE, "Skipping {0}: LastModified {1} is after threshold {2}",
                       new Object[]{key, lastModified, threshold});
@@ -143,7 +143,7 @@ public class S3Cleaner {
       }
 
       requestBuilder = ListObjectsV2Request.builder()
-              .bucket(bucket)
+              .bucket(bucketName)
               .continuationToken(listObjectsV2Response.nextContinuationToken());
       if (folder != null) {
         requestBuilder.prefix(folder);
@@ -154,10 +154,10 @@ public class S3Cleaner {
     LOGGER.log(INFO, "Cleaning finished. Processed {0} pages.", pageCount);
   }
 
-  private void deleteObject(final S3Client s3Client, final String bucket, final String key) {
+  private void deleteObject(final S3Client s3Client, final String key) {
     try {
       DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
-              .bucket(bucket)
+              .bucket(bucketName)
               .key(key)
               .build();
       s3Client.deleteObject(deleteObjectRequest);

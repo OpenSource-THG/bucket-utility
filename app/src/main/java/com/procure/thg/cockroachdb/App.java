@@ -77,7 +77,7 @@ public class App {
                                 .connectionTimeout(Duration.ofSeconds(6000)))
                         .build();
 
-                S3Copier copier = new S3Copier(sourceClient, System.getenv("BUCKET_NAME"), folder,
+                S3Copier copier = new S3Copier(sourceClient, getBucketName(), folder,
                         targetClient, targetBucket, targetFolder, copyModified);
                 if (copyMetadata) {
                     copier.syncMetaDataRecentObjects(thresholdSeconds);
@@ -85,7 +85,7 @@ public class App {
                     copier.copyRecentObjects(thresholdSeconds);
                 }
             } else {
-                S3Cleaner cleaner = new S3Cleaner(sourceClient, thresholdSeconds, folder);
+                S3Cleaner cleaner = new S3Cleaner(sourceClient, getBucketName(), thresholdSeconds, folder);
                 cleaner.cleanOldObjects();
             }
         } catch (Exception e) {
@@ -125,6 +125,16 @@ public class App {
             throw new IllegalArgumentException(msg);
         }
         return Long.parseLong(thresholdEnv);
+    }
+
+    private static String getBucketName() {
+        final var bucketName = System.getenv("BUCKET_NAME");
+        if (bucketName == null || bucketName.isEmpty()) {
+            var msg = "BUCKET_NAME environment variable not set";
+            LOGGER.log(SEVERE, msg);
+            throw new IllegalArgumentException(msg);
+        }
+        return bucketName;
     }
 
     private static String getFolderPrefix() {
