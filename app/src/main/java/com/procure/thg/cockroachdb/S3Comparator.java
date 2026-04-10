@@ -13,12 +13,7 @@ import static java.util.logging.Level.*;
 public class S3Comparator {
 
     private static final Logger LOGGER = Logger.getLogger(S3Comparator.class.getName());
-
-    // Padding applied to target effective timestamp (10 minutes, same as S3Copier)
     private static final long PADDING_MINUTES = 10;
-
-    // Optional tolerance for near-equality (60 seconds, kept for backward compatibility)
-    private static final long SYNC_TOLERANCE_SECONDS = 60;
 
     private final S3Client sourceClient;
     private final String sourceBucket;
@@ -172,7 +167,7 @@ public class S3Comparator {
                     HeadObjectResponse sourceHead = sourceClient.headObject(req -> req.bucket(sourceBucket).key(srcKey));
                     HeadObjectResponse targetHead = targetClient.headObject(req -> req.bucket(targetBucket).key(targetKey));
 
-                    // Compare effective timestamps (same logic as S3Copier)
+                    // Compare using a looser tolerance for operational diffing.
                     action = areTimestampsSynced(sourceHead, targetHead, relativeKey);
 
                     if (action == ComparisonAction.MATCH) {
@@ -243,33 +238,31 @@ public class S3Comparator {
         } while (Boolean.TRUE.equals(listResponse.isTruncated()));
     }
 
-    /**
-     * Determines if the Source and Target files are "the same" based on the effective timestamp logic.
-     * Uses the same max(copied-when, last-modified, built-in) + padding as S3Copier.
-     * @return ComparisonAction (MATCH or DIFF_TIMESTAMP)
-     */
     private ComparisonAction areTimestampsSynced(HeadObjectResponse sourceHead, HeadObjectResponse targetHead, String fileName) {
-        Instant sourceEffective = getEffectiveTimestamp(sourceHead, "source");
-        Instant targetEffectiveBase = getEffectiveTimestamp(targetHead, "target");
-        Instant targetEffectivePadded = targetEffectiveBase.plus(PADDING_MINUTES, ChronoUnit.MINUTES);
-
-        if (sourceEffective.isAfter(targetEffectivePadded)) {
-            LOGGER.log(WARNING,
-                    "DIFF: Timestamp mismatch (source newer after padding).\n\tFile: {0}\n\tSource Effective: {1}\n\tTarget Effective (base): {2} [padded to {3}]\n\tDiff: {4} minutes",
-                    new Object[]{fileName, sourceEffective, targetEffectiveBase, targetEffectivePadded,
-                            Duration.between(sourceEffective, targetEffectivePadded).abs().toMinutes()});
-            return ComparisonAction.DIFF_TIMESTAMP;
-        }
-
-        // Additional tolerance check for near-equality
-        long diffSeconds = Duration.between(sourceEffective, targetEffectiveBase).abs().getSeconds();
-        if (diffSeconds < SYNC_TOLERANCE_SECONDS) {
-            LOGGER.log(FINE, "Timestamps within {0}s tolerance: {1}", new Object[]{SYNC_TOLERANCE_SECONDS, fileName});
+        boolean sameETag = sourceHead.eTag() != null
+                && targetHead.eTag() != null
+                && sourceHead.eTag().equals(targetHead.eTag());
+        boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
+        if (sameETag && sameSize) {
+            LOGGER.log(FINE, "MATCH (ETag/Size match): {0}", fileName);
             return ComparisonAction.MATCH;
         }
 
-        LOGGER.log(FINE, "MATCH (source not newer after padding): {0}", fileName);
-        return ComparisonAction.MATCH;
+        Instant sourceEffective = getEffectiveTimestamp(sourceHead, "source");
+        Instant targetEffective = getEffectiveTimestamp(targetHead, "target");
+        Instant targetEffectivePadded = targetEffective.plus(PADDING_MINUTES, ChronoUnit.MINUTES);
+
+        if (!sourceEffective.isAfter(targetEffectivePadded)) {
+            LOGGER.log(FINE, "MATCH (target within {0} minute tolerance): {1}",
+                    new Object[]{PADDING_MINUTES, fileName});
+            return ComparisonAction.MATCH;
+        }
+
+        LOGGER.log(WARNING,
+                "DIFF: Timestamp mismatch.\n\tFile: {0}\n\tSource Effective: {1}\n\tTarget Effective: {2} [padded to {3}]\n\tDiff: {4} minutes",
+                new Object[]{fileName, sourceEffective, targetEffective, targetEffectivePadded,
+                        Duration.between(sourceEffective, targetEffectivePadded).abs().toMinutes()});
+        return ComparisonAction.DIFF_TIMESTAMP;
     }
 
     /**
