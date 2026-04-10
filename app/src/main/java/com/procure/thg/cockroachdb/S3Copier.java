@@ -1,16 +1,16 @@
 package com.procure.thg.cockroachdb;
 
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
+
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
-
-import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
 
 import static java.util.logging.Level.*;
 
@@ -21,6 +21,8 @@ public class S3Copier {
     // Threshold: 100 MB. Objects smaller than this are buffered to fix Ceph 403 issues.
     // Objects larger than this are streamed to prevent OOM.
     private static final long MEMORY_BUFFER_THRESHOLD = 100 * 1024 * 1024;
+
+    private static final long PADDING_MINUTES = 10;
 
     private final S3Client sourceClient;
     private final String sourceBucket;
@@ -51,6 +53,78 @@ public class S3Copier {
         } else {
             return "";
         }
+    }
+
+    /**
+     * Computes the effective last modified timestamp in the new manner:
+     * max(copied-when, last-modified meta, built-in LastModified).
+     * If copied-when < built-in, use built-in; else use the manual one.
+     */
+    private Instant getEffectiveLastModified(GetObjectResponse response) {
+        Instant builtIn = response.lastModified() != null ? response.lastModified() : Instant.EPOCH;
+
+        Map<String, String> metadata = response.metadata() != null ? response.metadata() : new HashMap<>();
+
+        Instant copiedWhen = Instant.EPOCH;
+        String cwStr = metadata.get("copied-when");
+        if (cwStr != null) {
+            try {
+                copiedWhen = Instant.parse(cwStr);
+            } catch (Exception e) {
+                LOGGER.log(FINE, "Invalid copied-when format: " + cwStr, e);
+            }
+        }
+
+        Instant lastModMeta = Instant.EPOCH;
+        String lmStr = metadata.get("last-modified");
+        if (lmStr != null) {
+            try {
+                lastModMeta = Instant.parse(lmStr);
+            } catch (Exception e) {
+                LOGGER.log(FINE, "Invalid last-modified format: " + lmStr, e);
+            }
+        }
+
+        // Max of manual timestamps
+        Instant maxManual = copiedWhen.isAfter(lastModMeta) ? copiedWhen : lastModMeta;
+
+        // Max with built-in
+        return maxManual.isAfter(builtIn) ? maxManual : builtIn;
+    }
+
+    /**
+     * Overloaded for HeadObjectResponse.
+     */
+    private Instant getEffectiveLastModified(HeadObjectResponse head) {
+        Instant builtIn = head.lastModified() != null ? head.lastModified() : Instant.EPOCH;
+
+        Map<String, String> metadata = head.metadata() != null ? head.metadata() : new HashMap<>();
+
+        Instant copiedWhen = Instant.EPOCH;
+        String cwStr = metadata.get("copied-when");
+        if (cwStr != null) {
+            try {
+                copiedWhen = Instant.parse(cwStr);
+            } catch (Exception e) {
+                LOGGER.log(FINE, "Invalid copied-when format: " + cwStr, e);
+            }
+        }
+
+        Instant lastModMeta = Instant.EPOCH;
+        String lmStr = metadata.get("last-modified");
+        if (lmStr != null) {
+            try {
+                lastModMeta = Instant.parse(lmStr);
+            } catch (Exception e) {
+                LOGGER.log(FINE, "Invalid last-modified format: " + lmStr, e);
+            }
+        }
+
+        // Max of manual timestamps
+        Instant maxManual = copiedWhen.isAfter(lastModMeta) ? copiedWhen : lastModMeta;
+
+        // Max with built-in
+        return maxManual.isAfter(builtIn) ? maxManual : builtIn;
     }
 
     public void copyRecentObjects(final long thresholdSeconds) {
@@ -117,30 +191,68 @@ public class S3Copier {
         final String relativeKey = sourceKey.substring(sourceFolder.length());
         final String targetKey = targetFolder + relativeKey;
 
-        HeadObjectRequest headRequest = HeadObjectRequest.builder()
+        // Fetch source metadata first to use for comparison and writing
+        HeadObjectResponse sourceHead;
+        try {
+            sourceHead = sourceClient.headObject(
+                    HeadObjectRequest.builder().bucket(sourceBucket).key(sourceKey).build());
+        } catch (Exception e) {
+            LOGGER.log(SEVERE, "Failed to fetch source metadata for {0}/{1}: {2}. Cannot proceed with copy.",
+                    new Object[]{sourceBucket, sourceKey, e.getMessage()});
+            throw new IOException("Failed to fetch source object metadata.", e);
+        }
+
+
+        // === 1. Check if we even need to copy ===
+        boolean shouldCopy = true;
+        HeadObjectRequest targetHeadRequest = HeadObjectRequest.builder()
                 .bucket(targetBucket)
                 .key(targetKey)
                 .build();
 
-        boolean shouldCopy = true;
         try {
-            final HeadObjectResponse targetHead = targetClient.headObject(headRequest);
+            final HeadObjectResponse targetHead = targetClient.headObject(targetHeadRequest);
+
             if (!copyModified) {
                 LOGGER.log(FINE, "Object {0}/{1} already exists, skipping (copyModified=false)",
                         new Object[]{targetBucket, targetKey});
                 return;
             }
 
-            // compare ETag or size as a heuristic for modified detection
-            final HeadObjectResponse sourceHead = sourceClient.headObject(
-                    HeadObjectRequest.builder().bucket(sourceBucket).key(sourceKey).build());
-
             final boolean sameETag = sourceHead.eTag() != null && targetHead.eTag() != null && sourceHead.eTag().equals(targetHead.eTag());
             final boolean sameSize = sourceHead.contentLength() == targetHead.contentLength();
 
             if (sameETag && sameSize) {
-                LOGGER.log(FINE, "Object {0}/{1} unchanged, skipping (copyModified=true)", new Object[]{targetBucket, targetKey});
+                LOGGER.log(FINE, "Object {0}/{1} unchanged (ETag/Size match), skipping", new Object[]{targetBucket, targetKey});
                 shouldCopy = false;
+            } else {
+                // Secondary check: If ETag/Size comparison fails (e.g., due to different ETag calculation),
+                // check the custom metadata timestamp, which is more reliable for cross-S3 idempotency.
+
+                final Instant sourceLastModified = getEffectiveLastModified(sourceHead);
+                // AWS SDK retrieves user metadata keys lowercased and without 'x-amz-meta-' prefix.
+                // We assume the key we wrote is available as 'last-modified'.
+                final Instant targetLastModified = getEffectiveLastModified(targetHead);
+
+                if (sourceLastModified != null && targetLastModified != null) {
+                    try {
+                        if (sourceLastModified.equals(targetLastModified)) {
+                            // If the source's last modified time matches the time we recorded on the target, skip.
+                            LOGGER.log(FINE, "Object unchanged (Timestamp match via metadata) → skipping {0}/{1}", new Object[]{targetBucket, targetKey});
+                            shouldCopy = false;
+                        } else {
+                            // Timestamp changed, proceed with copy.
+                            LOGGER.log(FINE, "Source timestamp changed or metadata mismatch. Proceeding with copy.");
+                        }
+                    } catch (Exception parseException) {
+                        LOGGER.log(WARNING, "Metadata timestamp check failed for {0}. Proceeding with copy to be safe.", targetKey);
+                        shouldCopy = true;
+                    }
+                } else {
+                    // ETag failed, and metadata is missing/incomplete. Assume change and copy.
+                    LOGGER.log(FINE, "ETag mismatch detected, proceeding with copy of {0}", targetKey);
+                    shouldCopy = true;
+                }
             }
         } catch (NoSuchKeyException e) {
             shouldCopy = true; // doesn't exist, copy it
@@ -159,11 +271,27 @@ public class S3Copier {
 
         try (ResponseInputStream<GetObjectResponse> objectStream = sourceClient.getObject(getRequest)) {
             final Long contentLength = objectStream.response().contentLength();
+            final GetObjectResponse getResponse = objectStream.response();
 
-            // Use metadata from GetObjectResponse
-            Map<String, String> metadata = new HashMap<>(objectStream.response().metadata());
-            if (objectStream.response().lastModified() != null) {
-                metadata.put("x-amz-meta-last-modified", objectStream.response().lastModified().toString());
+            // Prepare metadata (we only include necessary fields to avoid Ceph rejection)
+            Map<String, String> metadata = new HashMap<>();
+
+            // CRITICAL: Copy only the user metadata from source
+            if (getResponse.metadata() != null) {
+                // Note: copy the map but ensure all keys are lowercase for standard S3 behavior
+                getResponse.metadata().forEach((key, value) -> {
+                    // We only want user-defined metadata (starts with x-amz-meta-)
+                    // The AWS SDK usually strips this prefix upon retrieval, but we re-add it if needed.
+                    if (key.toLowerCase().startsWith("x-amz-meta-")) {
+                        metadata.put(key, value);
+                    }
+                });
+            }
+
+            // CRITICAL: Add the source's effective LastModified timestamp as custom metadata for idempotency check
+            Instant effectiveLastModified = getEffectiveLastModified(getResponse);
+            if (effectiveLastModified != Instant.EPOCH) {
+                metadata.put("last-modified", effectiveLastModified.toString());
             }
 
             PutObjectRequest.Builder builder = PutObjectRequest.builder()
@@ -172,15 +300,14 @@ public class S3Copier {
             if (!metadata.isEmpty()) {
                 builder.metadata(metadata);
             }
-            String contentType = objectStream.response().contentType();
+
+            String contentType = getResponse.contentType();
             if (contentType != null) {
                 builder.contentType(contentType);
             }
             PutObjectRequest putRequest = builder.build();
 
-            // HYBRID STRATEGY:
-            // If file is small (< 100MB), buffer it to memory. This allows AWS SDK to calculate checksums
-            // and handle retries safely, which prevents the Ceph 403/Missing Auth errors.
+            // HYBRID STRATEGY (Buffer small files for robustness, stream large files to prevent OOM)
             if (contentLength != null && contentLength >= 0 && contentLength < MEMORY_BUFFER_THRESHOLD) {
                 byte[] objectContent = objectStream.readAllBytes();
                 targetClient.putObject(putRequest, RequestBody.fromBytes(objectContent));
@@ -189,8 +316,6 @@ public class S3Copier {
                         new Object[]{sourceBucket, sourceKey, targetBucket, targetKey, contentLength});
             } else {
                 // If file is large (or length unknown), stream it to avoid OOM.
-                // Note: If a network error occurs during this large transfer, retries might fail
-                // or cause 403s on Ceph, but we cannot risk crashing the JVM.
                 LOGGER.log(INFO, "Streaming large object (>100MB) from {0}/{1} to {2}/{3} [Size: {4}]",
                         new Object[]{sourceBucket, sourceKey, targetBucket, targetKey, contentLength});
 
@@ -198,7 +323,7 @@ public class S3Copier {
                     targetClient.putObject(putRequest, RequestBody.fromInputStream(objectStream, contentLength));
                 } else {
                     // Fallback if length is missing (rare in S3)
-                    LOGGER.log(WARNING, "Warning: object length is missing");
+                    LOGGER.log(WARNING, "Warning: object length is missing, buffering entire content as a fallback.");
 
                     byte[] content = objectStream.readAllBytes();
                     targetClient.putObject(putRequest, RequestBody.fromBytes(content));
@@ -308,7 +433,10 @@ public class S3Copier {
 
         // Prepare metadata (excluding lastModified)
         Map<String, String> metadata = new HashMap<>(sourceHeadResponse.metadata());
-        metadata.put("x-amz-meta-last-modified", sourceHeadResponse.lastModified().toString());
+        Instant effectiveLastModified = getEffectiveLastModified(sourceHeadResponse);
+        if (effectiveLastModified != Instant.EPOCH) {
+            metadata.put("last-modified", effectiveLastModified.toString());
+        }
 
         // Use CopyObject to update metadata in-place on Ceph
         CopyObjectRequest copyRequest = CopyObjectRequest.builder()
