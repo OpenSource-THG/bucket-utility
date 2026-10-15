@@ -7,6 +7,8 @@ import java.util.logging.Logger;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -41,6 +43,9 @@ public class App {
                     .endpointOverride(getEndpointUri())
                     .region(REGION)
                     .forcePathStyle(true)
+                    // Keep pre-2.30 SDK behaviour: default CRC checksums are not supported by all Ceph versions
+                    .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                    .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                     .httpClientBuilder(ApacheHttpClient.builder()
                             .socketTimeout(Duration.ofSeconds(6000))
                             .connectionTimeout(Duration.ofSeconds(6000)))
@@ -71,6 +76,9 @@ public class App {
                                 AwsBasicCredentials.create(targetAccessKey, targetSecretKey)))
                         .endpointOverride(URI.create(targetEndpoint))
                         .forcePathStyle(true)
+                        // Keep pre-2.30 SDK behaviour: default CRC checksums are not supported by all Ceph versions
+                        .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                        .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                         .region(REGION)
                         .httpClientBuilder(ApacheHttpClient.builder()
                                 .socketTimeout(Duration.ofSeconds(6000))
