@@ -13,5 +13,9 @@ COPY entrypoint.sh /app/entrypoint.sh
 # Make the entrypoint script executable
 RUN chmod +x /app/entrypoint.sh
 
+# Run as an unprivileged user
+RUN useradd --system --uid 10001 --no-create-home appuser
+USER 10001
+
 # Run the entrypoint script
 ENTRYPOINT ["/app/entrypoint.sh"]
